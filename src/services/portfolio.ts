@@ -16,7 +16,7 @@ export async function getPortfolioSummary(userId: string): Promise<PortfolioSumm
     return { total_usd: 0, change_24h_usd: 0, change_24h_pct: 0, assets: [] };
   }
 
-  const walletIds = wallets.map((w) => w.id);
+  const walletIds = wallets.map((w: any) => w.id);
 
   // Fetch balances + assets
   const { data: balances } = await supabase
@@ -33,19 +33,19 @@ export async function getPortfolioSummary(userId: string): Promise<PortfolioSumm
         change_24h_pct: 2.62,
         assets: [
           {
-            asset: { id: "bitcoin",  symbol: "btc", name: "Bitcoin",  is_active: true, created_at: "" },
+            asset: { id: "bitcoin",  symbol: "btc", name: "Bitcoin",  is_active: true, created_at: "", coingecko_id: "bitcoin", decimals: 8 } as SupportedAsset,
             balance: 0.45, price_usd: 93_412.50, value_usd: 42_035.63, change_24h_pct: 1.84
           },
           {
-            asset: { id: "ethereum", symbol: "eth", name: "Ethereum", is_active: true, created_at: "" },
+            asset: { id: "ethereum", symbol: "eth", name: "Ethereum", is_active: true, created_at: "", coingecko_id: "ethereum", decimals: 18 } as SupportedAsset,
             balance: 2.5,  price_usd: 3_452.80,   value_usd: 8_632.00,  change_24h_pct: -0.82
           },
           {
-            asset: { id: "solana",   symbol: "sol", name: "Solana",   is_active: true, created_at: "" },
+            asset: { id: "solana",   symbol: "sol", name: "Solana",   is_active: true, created_at: "", coingecko_id: "solana", decimals: 9 } as SupportedAsset,
             balance: 10.0, price_usd: 178.32,      value_usd: 1_783.20,  change_24h_pct: 3.21
           },
           {
-            asset: { id: "tether",   symbol: "usdt",name: "Tether",   is_active: true, created_at: "" },
+            asset: { id: "tether",   symbol: "usdt",name: "Tether",   is_active: true, created_at: "", coingecko_id: "tether", decimals: 6 } as SupportedAsset,
             balance: 361.0, price_usd: 1.00,       value_usd: 361.00,    change_24h_pct: 0.01
           },
         ]
@@ -58,9 +58,9 @@ export async function getPortfolioSummary(userId: string): Promise<PortfolioSumm
   const { data: assetsData } = await supabase
     .from("supported_assets")
     .select("*")
-    .in("id", balances.map((b) => b.asset_id));
+    .in("id", balances.map((b: any) => b.asset_id));
 
-  const assetMap = new Map<string, SupportedAsset>((assetsData ?? []).map((a) => [a.id, a]));
+  const assetMap = new Map<string, SupportedAsset>((assetsData ?? []).map((a: any) => [a.id, a]));
 
   // Get live data from Bybit (Real-time) and MarketAssets (Fallback/Metadata)
   const [bybit, marketList] = await Promise.all([

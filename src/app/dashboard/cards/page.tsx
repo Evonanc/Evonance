@@ -157,7 +157,7 @@ export default function CardsPage() {
     if (res.success) {
       await fetchCards(user.id);
     } else {
-      setError(res.error);
+      setError(res.error || "Failed to create virtual card");
     }
     setIssuing(false);
   };
@@ -179,7 +179,7 @@ export default function CardsPage() {
       setFundAmount("");
       await Promise.all([fetchCards(user.id), fetchTxns(user.id, activeCardId)]);
     } else {
-      setError(res.error);
+      setError(res.error || "Failed to fund virtual card");
     }
     setFunding(false);
   };

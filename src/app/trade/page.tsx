@@ -60,7 +60,7 @@ export default function TradePage() {
       const { data: bal } = await supabase.from("wallet_balances").select("asset_id, balance").eq("wallet_id", wallets.id);
       if (bal) {
         const bMap: Record<string, number> = {};
-        bal.forEach(b => bMap[b.asset_id] = Number(b.balance));
+        bal.forEach((b: any) => bMap[b.asset_id] = Number(b.balance));
         setBalances(bMap);
       }
     }

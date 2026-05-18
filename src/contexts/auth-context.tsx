@@ -39,7 +39,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Get initial session — always resolve loading even on network failure
     supabase.auth.getSession()
-      .then(({ data: { session } }) => {
+      .then((res: any) => {
+        const session = res.data?.session;
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) fetchProfile(session.user.id);
@@ -52,7 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      async (event: any, session: any) => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {

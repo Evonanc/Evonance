@@ -102,7 +102,7 @@ export default function SwapPage() {
       const { data: bal } = await supabase.from("wallet_balances").select("asset_id, balance").eq("wallet_id", wallets.id);
       if (bal) {
         const bMap: Record<string, number> = {};
-        bal.forEach(b => bMap[b.asset_id] = Number(b.balance));
+        bal.forEach((b: any) => bMap[b.asset_id] = Number(b.balance));
         setBalances(bMap);
       }
     }
@@ -112,10 +112,11 @@ export default function SwapPage() {
   useEffect(() => {
     async function init() {
       const supabase = createClient();
-      const { data: supported } = await supabase
+      const { data: supportedData } = await supabase
         .from("supported_assets")
         .select("*")
         .eq("is_active", true);
+      const supported = supportedData as SupportedAsset[] | null;
       const mkts = await getMarketAssets(4);
 
       if (supported && supported.length > 0) {
