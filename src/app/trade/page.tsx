@@ -1,405 +1,423 @@
 "use client";
 
-import React, { useEffect, useState, useCallback, useMemo } from "react";
-import Link from "next/link";
-import { motion, AnimatePresence } from "framer-motion";
+import React, { useState, useEffect, useRef } from "react";
+import { Navbar } from "@/components/shared/navbar";
+import { Footer } from "@/components/shared/footer";
 import { cn } from "@/lib/utils";
-import {
-  ChevronDown, Search, Star, Bell, Settings,
-  ArrowUpRight, ArrowDownLeft, Activity, X,
-  Check, AlertCircle, RefreshCw
-} from "lucide-react";
-import dynamic from "next/dynamic";
-import { useAuth } from "@/contexts/auth-context";
-import { createClient } from "@/lib/supabase/client";
-import { getMarketAssets, getBatchPrices, getAssetPrice, getBybitPrices } from "@/services/market";
-import { submitTrade, getTradeHistory } from "@/services/trade";
-import type { SupportedAsset, MarketAsset, Trade } from "@/types/database";
+import { TrendingUp, TrendingDown, ChevronDown, RefreshCw } from "lucide-react";
 
-const TradingChart = dynamic(() => import("@/components/trade/trading-chart"), {
-  ssr: false,
-  loading: () => (
-    <div className="w-full h-full bg-secondary/20 animate-pulse rounded-xl flex items-center justify-center">
-      <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">Loading Analytics...</p>
-    </div>
-  )
-});
+// ── Types ────────────────────────────────────────────────────────────
+type Side = "buy" | "sell";
+type OrderType = "limit" | "market" | "stop";
+type Timeframe = "1m" | "5m" | "15m" | "1h" | "4h" | "1d";
+type TabBottom = "open" | "history" | "trades";
 
-const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
-const ORDER_TYPES = ["Limit", "Market", "Stop-Limit"];
-const PERCENT_STEPS = [25, 50, 75, 100];
+const PAIRS = [
+  { symbol: "BTC/USDT", price: 94231.50, change: 2.45, high: 95800, low: 91200, vol: "4.2B" },
+  { symbol: "ETH/USDT", price: 3421.20,  change: -1.20, high: 3540, low: 3380, vol: "1.8B" },
+  { symbol: "SOL/USDT", price: 215.45,   change: 5.67, high: 222, low: 205, vol: "892M" },
+  { symbol: "BNB/USDT", price: 612.30,   change: 0.85, high: 625, low: 605, vol: "540M" },
+  { symbol: "XRP/USDT", price: 2.18,     change: -0.42, high: 2.24, low: 2.11, vol: "310M" },
+];
 
-
-export default function TradePage() {
-  const { user } = useAuth();
-  const [marketAssets, setMarketAssets] = useState<MarketAsset[]>([]);
-  const [activeAsset, setActiveAsset] = useState<MarketAsset | null>(null);
-  const [balances, setBalances] = useState<Record<string, number>>({});
-  const [history, setHistory] = useState<Trade[]>([]);
-  
-  const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [orderType, setOrderType] = useState("Market");
-  const [timeframe, setTimeframe] = useState("15m");
-  const [amount, setAmount] = useState("");
-  const [price, setPrice] = useState("");
-  const [search, setSearch] = useState("");
-  
-  const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState<{ type: "success" | "error"; msg: string } | null>(null);
-
-  const fetchTradeHistory = useCallback(async (uid: string) => {
-    const data = await getTradeHistory(uid, 20);
-    setHistory(data as Trade[]);
-  }, []);
-
-  const fetchBalances = useCallback(async (uid: string) => {
-    const supabase = createClient();
-    const { data: wallets } = await supabase.from("wallets").select("id").eq("user_id", uid).single();
-    if (wallets) {
-      const { data: bal } = await supabase.from("wallet_balances").select("asset_id, balance").eq("wallet_id", wallets.id);
-      if (bal) {
-        const bMap: Record<string, number> = {};
-        bal.forEach((b: any) => bMap[b.asset_id] = Number(b.balance));
-        setBalances(bMap);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    async function init() {
-      const mkts = await getMarketAssets(12);
-      setMarketAssets(mkts);
-      if (!activeAsset) setActiveAsset(mkts[0]);
-      if (user) {
-        await Promise.all([fetchBalances(user.id), fetchTradeHistory(user.id)]);
-      }
-      setLoading(false);
-    }
-    init();
-
-    // High-frequency real-time updates (2s)
-    const interval = setInterval(async () => {
-      const bybit = await getBybitPrices();
-      
-      setMarketAssets(prev => prev.map(m => {
-        const p = bybit[m.symbol.toUpperCase()];
-        return p ? { ...m, current_price: p.price } : m;
-      }));
-
-      setActiveAsset(prev => {
-        if (!prev) return prev;
-        const p = bybit[prev.symbol.toUpperCase()];
-        return p ? { ...prev, current_price: p.price } : prev;
-      });
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [user, activeAsset?.id, fetchBalances, fetchTradeHistory]);
-
-  const handleSubmit = async () => {
-    if (!user || !activeAsset || !amount) return;
-    setStatus(null);
-    setSubmitting(true);
-    
-    const res = await submitTrade(user.id, {
-      pair: `${activeAsset.symbol.toUpperCase()}/USDT`,
-      baseAsset: activeAsset.id,
-      quoteAsset: "tether",
-      side,
-      amount: parseFloat(amount),
-      price: activeAsset.current_price
+// ── Candlestick Chart (SVG) ──────────────────────────────────────────
+function CandleChart({ pair }: { pair: typeof PAIRS[0] }) {
+  const candles = React.useMemo(() => {
+    const base = pair.price;
+    return Array.from({ length: 60 }, (_, i) => {
+      const t = (i / 59) * 8 * Math.PI;
+      const trend = Math.sin(t * 0.3) * 0.05 + Math.cos(t * 0.7) * 0.03;
+      const o = base * (1 + trend + (Math.random() - 0.5) * 0.015);
+      const c = o * (1 + (Math.random() - 0.5) * 0.012);
+      const h = Math.max(o, c) * (1 + Math.random() * 0.008);
+      const lo = Math.min(o, c) * (1 - Math.random() * 0.008);
+      return { o, c, h, l: lo, bull: c >= o };
     });
-    
-    if (res.success) {
-      setStatus({ type: "success", msg: "Order filled successfully!" });
-      setAmount("");
-      await Promise.all([fetchBalances(user.id), fetchTradeHistory(user.id)]);
-    } else {
-      setStatus({ type: "error", msg: res.error || "Order failed" });
-    }
-    setSubmitting(false);
-    setTimeout(() => setStatus(null), 5000);
-  };
+  }, [pair.symbol]);
 
-  const filteredPairs = marketAssets.filter(p =>
-    p.symbol.toLowerCase().includes(search.toLowerCase()) ||
-    p.name.toLowerCase().includes(search.toLowerCase())
+  const allH = candles.map(c => c.h);
+  const allL = candles.map(c => c.l);
+  const maxP = Math.max(...allH);
+  const minP = Math.min(...allL);
+  const range = maxP - minP || 1;
+  const W = 700, H = 260, PAD = 10;
+  const cw = (W - PAD * 2) / candles.length;
+
+  const py = (v: number) => PAD + ((maxP - v) / range) * (H - PAD * 2);
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-full" preserveAspectRatio="none">
+      {/* Grid lines */}
+      {[0, 0.25, 0.5, 0.75, 1].map(t => (
+        <line key={t} x1={0} y1={PAD + t * (H - PAD * 2)} x2={W} y2={PAD + t * (H - PAD * 2)}
+          stroke="rgba(255,255,255,0.05)" strokeWidth="1" />
+      ))}
+      {/* Candles */}
+      {candles.map((c, i) => {
+        const x = PAD + i * cw + cw * 0.15;
+        const bw = cw * 0.7;
+        const oy = py(c.o), cy2 = py(c.c);
+        const top = Math.min(oy, cy2), ht = Math.abs(oy - cy2) || 1;
+        const color = c.bull ? "#22C55E" : "#EF4444";
+        return (
+          <g key={i}>
+            <line x1={x + bw / 2} y1={py(c.h)} x2={x + bw / 2} y2={py(c.l)} stroke={color} strokeWidth="1" />
+            <rect x={x} y={top} width={bw} height={ht} fill={color} opacity={0.85} rx={1} />
+          </g>
+        );
+      })}
+    </svg>
   );
+}
 
-  const availableUsdt = balances["tether"] || 0;
-  const availableBase = activeAsset ? balances[activeAsset.id] || 0 : 0;
-  const currentPrice  = activeAsset?.current_price || 0;
-  const totalUsdt    = amount ? parseFloat(amount) * currentPrice : 0;
+// ── Order Book Row ───────────────────────────────────────────────────
+function BookRow({ price, size, total, maxTotal, side }: {
+  price: number; size: number; total: number; maxTotal: number; side: "bid" | "ask";
+}) {
+  const pct = (total / maxTotal) * 100;
+  const isBid = side === "bid";
+  return (
+    <div className="relative flex items-center justify-between px-3 py-[3px] text-[11px] font-mono group hover:bg-secondary/40 transition-colors cursor-pointer">
+      <div className="absolute inset-y-0 right-0 transition-all duration-300"
+        style={{ width: `${pct}%`, background: isBid ? "rgba(34,197,94,0.07)" : "rgba(239,68,68,0.07)" }} />
+      <span className={cn("relative z-10 font-semibold tabular-nums", isBid ? "text-green-500" : "text-red-400")}>
+        {price.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+      </span>
+      <span className="relative z-10 text-muted-foreground tabular-nums">{size.toFixed(4)}</span>
+      <span className="relative z-10 text-muted-foreground tabular-nums">{total.toFixed(2)}</span>
+    </div>
+  );
+}
 
-  const chartData = useMemo(() => {
-    if (!activeAsset?.sparkline_in_7d?.price) return [];
-    const baseData = activeAsset.sparkline_in_7d.price.slice(-24).map((v, i) => ({
-      t: `${i}:00`,
-      v: v
-    }));
-    
-    // Add current live price as the most recent point
-    if (currentPrice > 0) {
-      baseData.push({
-        t: "Now",
-        v: currentPrice
-      });
-    }
-    return baseData;
-  }, [activeAsset, currentPrice]);
+function OrderBook({ pair }: { pair: typeof PAIRS[0] }) {
+  const asks = React.useMemo(() => Array.from({ length: 10 }, (_, i) => {
+    const p = pair.price + (10 - i) * (pair.price * 0.0003 + Math.random() * pair.price * 0.0002);
+    const s = 0.01 + Math.random() * 0.5;
+    return { price: p, size: s, total: p * s };
+  }).reverse(), [pair.price]);
 
-  if (loading) return (
-    <div className="h-screen bg-background flex items-center justify-center">
-      <div className="flex flex-col items-center gap-4">
-        <div className="w-10 h-10 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Loading Exchange...</p>
+  const bids = React.useMemo(() => Array.from({ length: 10 }, (_, i) => {
+    const p = pair.price - (i + 1) * (pair.price * 0.0003 + Math.random() * pair.price * 0.0002);
+    const s = 0.01 + Math.random() * 0.5;
+    return { price: p, size: s, total: p * s };
+  }), [pair.price]);
+
+  const maxAsk = Math.max(...asks.map(a => a.total));
+  const maxBid = Math.max(...bids.map(b => b.total));
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+        <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Order Book</p>
+      </div>
+      <div className="flex justify-between px-3 py-1.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground/60 border-b border-border/50">
+        <span>Price</span><span>Size</span><span>Total</span>
+      </div>
+      <div className="flex-1 overflow-hidden flex flex-col">
+        <div className="flex-1 overflow-y-auto hide-scrollbar flex flex-col-reverse">
+          {asks.map((a, i) => (
+            <BookRow key={i} price={a.price} size={a.size} total={a.total} maxTotal={maxAsk} side="ask" />
+          ))}
+        </div>
+        <div className="py-2 px-3 border-y border-border/60 bg-secondary/30">
+          <span className={cn("text-base font-black tabular-nums", pair.change >= 0 ? "text-green-500" : "text-red-400")}>
+            {pair.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+          </span>
+          <span className="text-[10px] text-muted-foreground ml-2">≈ ${pair.price.toLocaleString()}</span>
+        </div>
+        <div className="flex-1 overflow-y-auto hide-scrollbar">
+          {bids.map((b, i) => (
+            <BookRow key={i} price={b.price} size={b.size} total={b.total} maxTotal={maxBid} side="bid" />
+          ))}
+        </div>
       </div>
     </div>
   );
+}
+
+// ── Place Order Panel ────────────────────────────────────────────────
+function OrderPanel({ pair }: { pair: typeof PAIRS[0] }) {
+  const [side, setSide] = useState<Side>("buy");
+  const [type, setType] = useState<OrderType>("limit");
+  const [amount, setAmount] = useState("");
+  const [price, setPrice] = useState(pair.price.toString());
+  const [pct, setPct] = useState(0);
+  const [submitted, setSubmitted] = useState(false);
+
+  const isBuy = side === "buy";
+  const total = parseFloat(amount || "0") * parseFloat(price || "0");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSubmitted(true);
+    setTimeout(() => setSubmitted(false), 2000);
+    setAmount("");
+  };
 
   return (
-    <div className="h-screen bg-background flex flex-col overflow-hidden font-sans">
-      {/* ── Top Bar ── */}
-      <header className="h-12 border-b border-border flex items-center px-4 gap-4 shrink-0 bg-card/60 backdrop-blur-xl overflow-x-auto hide-scrollbar">
-        <Link href="/dashboard" className="flex items-center gap-2 shrink-0">
-          <div className="w-6 h-6 rounded-lg ev-gradient flex items-center justify-center">
-            <Activity className="w-3 h-3 text-white" />
-          </div>
-          <span className="text-xs font-bold font-display hidden sm:inline">EVONANCE</span>
-        </Link>
-        <div className="h-4 w-px bg-border shrink-0" />
-        
-        {activeAsset && (
-          <>
-            <button className="flex items-center gap-2 shrink-0 group">
-              <span className="text-sm font-bold uppercase">{activeAsset.symbol}/USDT</span>
-              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-hover:text-foreground" />
-            </button>
-            <div className="flex items-center gap-5 text-xs overflow-x-auto hide-scrollbar">
-              <div>
-                <p className="text-[9px] text-muted-foreground uppercase tracking-widest leading-none mb-0.5">Price</p>
-                <p className={cn("font-bold font-mono", activeAsset.price_change_percentage_24h >= 0 ? "text-green-500" : "text-red-400")}>
-                  ${activeAsset.current_price.toLocaleString()}
-                </p>
-              </div>
-              <div className="hidden md:block">
-                <p className="text-[9px] text-muted-foreground uppercase tracking-widest leading-none mb-0.5">24h Change</p>
-                <p className={cn("font-bold", activeAsset.price_change_percentage_24h >= 0 ? "text-green-500" : "text-red-400")}>
-                  {activeAsset.price_change_percentage_24h >= 0 ? "+" : ""}{activeAsset.price_change_percentage_24h.toFixed(2)}%
-                </p>
-              </div>
-              <div className="hidden lg:block">
-                <p className="text-[9px] text-muted-foreground uppercase tracking-widest leading-none mb-0.5">24h Volume</p>
-                <p className="font-bold text-foreground/80">${(activeAsset.total_volume / 1e6).toFixed(1)}M</p>
-              </div>
-            </div>
-          </>
-        )}
-        
-        <div className="ml-auto flex items-center gap-2">
-          <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">
-            <Bell className="w-3.5 h-3.5" />
+    <div className="flex flex-col h-full">
+      {/* Buy/Sell tabs */}
+      <div className="grid grid-cols-2 border-b border-border">
+        {(["buy", "sell"] as Side[]).map(s => (
+          <button key={s} onClick={() => setSide(s)}
+            className={cn("py-3 text-sm font-bold transition-all duration-200 capitalize",
+              side === s
+                ? s === "buy" ? "bg-green-500/10 text-green-500 border-b-2 border-green-500"
+                              : "bg-red-500/10 text-red-400 border-b-2 border-red-500"
+                : "text-muted-foreground hover:text-foreground"
+            )}>
+            {s}
           </button>
-          <button className="w-7 h-7 flex items-center justify-center rounded-lg hover:bg-secondary text-muted-foreground hover:text-foreground">
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-          <Link href="/dashboard" className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2">
-            Dashboard
-          </Link>
-        </div>
-      </header>
+        ))}
+      </div>
 
-      {/* ── Main Layout ── */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* ─ Pair List ─ */}
-        <div className="w-[200px] border-r border-border shrink-0 flex flex-col hidden xl:flex">
-          <div className="p-2 border-b border-border">
+      {/* Order type */}
+      <div className="flex gap-1 px-3 py-2 border-b border-border/50">
+        {(["limit", "market", "stop"] as OrderType[]).map(t => (
+          <button key={t} onClick={() => setType(t)}
+            className={cn("px-3 py-1 rounded-lg text-[11px] font-semibold capitalize transition-all",
+              type === t ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}>
+            {t}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleSubmit} className="flex-1 flex flex-col p-3 gap-3">
+        {/* Available */}
+        <div className="flex justify-between text-[10px] text-muted-foreground">
+          <span>Available</span>
+          <span className="font-mono font-semibold">$12,480.00 USDT</span>
+        </div>
+
+        {/* Price (hidden for market) */}
+        {type !== "market" && (
+          <div>
+            <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Price</label>
             <div className="relative">
-              <Search className="w-3 h-3 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-              <input
-                value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="Search pairs..."
-                className="w-full h-7 pl-6 pr-2 text-xs bg-secondary rounded-lg outline-none"
-              />
+              <input type="number" value={price} onChange={e => setPrice(e.target.value)}
+                className="ev-input text-sm pr-14 font-mono" step="0.01" />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-semibold">USDT</span>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
-            {filteredPairs.map(p => (
-              <button
-                key={p.id} onClick={() => setActiveAsset(p)}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-secondary transition-colors",
-                  activeAsset?.id === p.id && "bg-primary/8"
-                )}
-              >
-                <div>
-                  <p className={cn("text-xs font-semibold leading-none uppercase", activeAsset?.id === p.id && "text-primary")}>
-                    {p.symbol}/USDT
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">${(p.total_volume / 1e6).toFixed(1)}M</p>
-                </div>
-                <p className={cn("text-[11px] font-bold", p.price_change_percentage_24h >= 0 ? "text-green-500" : "text-red-400")}>
-                  {p.price_change_percentage_24h >= 0 ? "+" : ""}{p.price_change_percentage_24h.toFixed(1)}%
-                </p>
+        )}
+
+        {/* Amount */}
+        <div>
+          <label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider block mb-1">Amount</label>
+          <div className="relative">
+            <input type="number" value={amount} onChange={e => setAmount(e.target.value)}
+              placeholder="0.0000" className="ev-input text-sm pr-12 font-mono" step="0.0001" min="0" />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-muted-foreground font-semibold">
+              {pair.symbol.split("/")[0]}
+            </span>
+          </div>
+        </div>
+
+        {/* % slider */}
+        <div>
+          <div className="flex justify-between mb-2">
+            {[0, 25, 50, 75, 100].map(p => (
+              <button key={p} type="button" onClick={() => setPct(p)}
+                className={cn("px-2 py-0.5 rounded text-[10px] font-semibold transition-all",
+                  pct === p ? "bg-primary/20 text-primary" : "text-muted-foreground hover:text-foreground"
+                )}>
+                {p === 0 ? "0%" : `${p}%`}
               </button>
             ))}
           </div>
+          <div className="relative h-1.5 bg-secondary rounded-full cursor-pointer"
+            onClick={e => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const p = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+              setPct(Math.min(100, Math.max(0, p)));
+            }}>
+            <div className="absolute left-0 top-0 h-full rounded-full transition-all duration-150"
+              style={{ width: `${pct}%`, background: isBuy ? "#22C55E" : "#EF4444" }} />
+            <div className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full border-2 border-white shadow transition-all duration-150"
+              style={{ left: `calc(${pct}% - 6px)`, background: isBuy ? "#22C55E" : "#EF4444" }} />
+          </div>
         </div>
 
-        {/* ─ Center: Chart ─ */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <div className="h-9 border-b border-border flex items-center px-3 gap-1 shrink-0">
-            {TIMEFRAMES.map(tf => (
-              <button key={tf} onClick={() => setTimeframe(tf)} className={cn("px-2.5 h-6 rounded-md text-[11px] font-medium transition-all", timeframe === tf ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>
+        {/* Total */}
+        <div className="flex justify-between text-[11px]">
+          <span className="text-muted-foreground">Total</span>
+          <span className="font-mono font-semibold">{total > 0 ? `$${total.toLocaleString("en-US", { maximumFractionDigits: 2 })}` : "—"}</span>
+        </div>
+
+        {/* Submit */}
+        <button type="submit"
+          className={cn("w-full h-10 rounded-xl text-sm font-bold text-white transition-all duration-200 mt-auto",
+            submitted ? "bg-green-500" :
+            isBuy ? "bg-green-500 hover:bg-green-600 active:scale-[0.98]"
+                  : "bg-red-500 hover:bg-red-600 active:scale-[0.98]"
+          )}>
+          {submitted ? "✓ Order Placed" : `${isBuy ? "Buy" : "Sell"} ${pair.symbol.split("/")[0]}`}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+// ── Bottom Tabs ──────────────────────────────────────────────────────
+function BottomPanel() {
+  const [tab, setTab] = useState<TabBottom>("open");
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex gap-1 px-4 border-b border-border">
+        {(["open", "history", "trades"] as TabBottom[]).map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            className={cn("px-4 py-2.5 text-xs font-semibold capitalize transition-all border-b-2",
+              tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+            )}>
+            {t === "open" ? "Open Orders" : t === "history" ? "Order History" : "Recent Trades"}
+          </button>
+        ))}
+      </div>
+      <div className="h-32 flex items-center justify-center">
+        {tab === "open" && <p className="text-xs text-muted-foreground">No open orders</p>}
+        {tab === "history" && (
+          <div className="w-full px-4 space-y-2 overflow-y-auto">
+            {[
+              { side: "buy", pair: "BTC/USDT", amt: 0.05, price: 93100, status: "Filled" },
+              { side: "sell", pair: "ETH/USDT", amt: 1.2, price: 3380, status: "Filled" },
+            ].map((o, i) => (
+              <div key={i} className="flex items-center justify-between text-[11px]">
+                <span className={cn("font-bold capitalize", o.side === "buy" ? "text-green-500" : "text-red-400")}>{o.side}</span>
+                <span className="text-muted-foreground">{o.pair}</span>
+                <span className="font-mono">{o.amt}</span>
+                <span className="font-mono">${o.price.toLocaleString()}</span>
+                <span className="text-green-500 font-semibold">{o.status}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {tab === "trades" && (
+          <div className="w-full px-4 space-y-1.5 overflow-y-auto">
+            {Array.from({ length: 5 }, (_, i) => ({
+              time: new Date(Date.now() - i * 12000).toLocaleTimeString(),
+              price: (94231 - i * 12 + Math.random() * 20).toFixed(2),
+              size: (0.001 + Math.random() * 0.1).toFixed(4),
+              bull: Math.random() > 0.5,
+            })).map((t, i) => (
+              <div key={i} className="flex items-center justify-between text-[11px] font-mono">
+                <span className={cn("font-semibold", t.bull ? "text-green-500" : "text-red-400")}>${t.price}</span>
+                <span className="text-muted-foreground">{t.size}</span>
+                <span className="text-muted-foreground/60">{t.time}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main Page ────────────────────────────────────────────────────────
+export default function TradePage() {
+  const [activePair, setActivePair] = useState(PAIRS[0]);
+  const [timeframe, setTimeframe] = useState<Timeframe>("1h");
+  const [pairOpen, setPairOpen] = useState(false);
+  const isUp = activePair.change >= 0;
+
+  return (
+    <div className="min-h-screen bg-background flex flex-col">
+      <Navbar />
+      <div className="h-16" aria-hidden />
+
+      {/* ── Pair selector + stats bar ── */}
+      <div className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-16 z-30">
+        <div className="flex items-center gap-6 px-4 py-2.5 overflow-x-auto hide-scrollbar">
+          {/* Pair picker */}
+          <div className="relative shrink-0">
+            <button onClick={() => setPairOpen(!pairOpen)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-secondary hover:bg-secondary/80 transition-colors">
+              <span className="text-sm font-black">{activePair.symbol}</span>
+              <ChevronDown className={cn("w-3.5 h-3.5 text-muted-foreground transition-transform", pairOpen && "rotate-180")} />
+            </button>
+            {pairOpen && (
+              <div className="absolute top-full left-0 mt-1 w-48 ev-card shadow-lg z-50 overflow-hidden">
+                {PAIRS.map(p => (
+                  <button key={p.symbol} onClick={() => { setActivePair(p); setPairOpen(false); }}
+                    className={cn("w-full flex items-center justify-between px-4 py-2.5 text-sm hover:bg-secondary transition-colors",
+                      p.symbol === activePair.symbol && "bg-secondary text-foreground"
+                    )}>
+                    <span className="font-bold">{p.symbol}</span>
+                    <span className={cn("text-xs font-semibold", p.change >= 0 ? "text-green-500" : "text-red-400")}>
+                      {p.change >= 0 ? "+" : ""}{p.change}%
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Price + change */}
+          <div className="flex items-baseline gap-2 shrink-0">
+            <span className={cn("text-2xl font-black tabular-nums", isUp ? "text-green-500" : "text-red-400")}>
+              ${activePair.price.toLocaleString("en-US", { minimumFractionDigits: 2 })}
+            </span>
+            <span className={cn("text-xs font-bold flex items-center gap-0.5", isUp ? "text-green-500" : "text-red-400")}>
+              {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
+              {isUp ? "+" : ""}{activePair.change}%
+            </span>
+          </div>
+
+          {/* 24h stats */}
+          {[
+            { label: "24h High", value: `$${activePair.high.toLocaleString()}` },
+            { label: "24h Low",  value: `$${activePair.low.toLocaleString()}` },
+            { label: "Volume",   value: activePair.vol },
+          ].map(s => (
+            <div key={s.label} className="shrink-0">
+              <p className="text-[9px] font-semibold uppercase tracking-widest text-muted-foreground">{s.label}</p>
+              <p className="text-xs font-bold font-mono">{s.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Main trading grid ── */}
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0">
+        {/* Order book — left */}
+        <div className="hidden lg:flex w-52 xl:w-60 border-r border-border flex-col shrink-0 bg-card/30">
+          <OrderBook pair={activePair} />
+        </div>
+
+        {/* Chart — centre */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-border">
+          {/* Timeframe tabs */}
+          <div className="flex items-center gap-1 px-4 py-2 border-b border-border">
+            {(["1m","5m","15m","1h","4h","1d"] as Timeframe[]).map(tf => (
+              <button key={tf} onClick={() => setTimeframe(tf)}
+                className={cn("px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all",
+                  timeframe === tf ? "bg-primary/15 text-primary" : "text-muted-foreground hover:text-foreground"
+                )}>
                 {tf}
               </button>
             ))}
-          </div>
-
-          <div className="flex-1 p-4 min-h-0">
-            <TradingChart data={chartData} priceChange={activeAsset?.price_change_percentage_24h || 0} />
-          </div>
-
-          <div className="flex-1 border-t border-border flex flex-col overflow-hidden">
-            <div className="h-8 border-b border-border flex items-center px-3 gap-4 shrink-0">
-              <button className="text-[11px] font-medium border-b border-primary text-foreground pb-0.5">Order History</button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-              <table className="w-full text-[10px] text-left border-collapse">
-                <thead className="sticky top-0 bg-background text-muted-foreground/60 uppercase tracking-widest font-semibold border-b border-border">
-                  <tr>
-                    <th className="px-3 py-2">Date</th>
-                    <th className="px-3 py-2">Pair</th>
-                    <th className="px-3 py-2">Side</th>
-                    <th className="px-3 py-2">Price</th>
-                    <th className="px-3 py-2">Amount</th>
-                    <th className="px-3 py-2">Total</th>
-                    <th className="px-3 py-2 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {history.map(t => (
-                    <tr key={t.id} className="hover:bg-secondary/30">
-                      <td className="px-3 py-2 text-muted-foreground">{new Date(t.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
-                      <td className="px-3 py-2 font-bold">{t.pair}</td>
-                      <td className={cn("px-3 py-2 font-bold", t.side === 'buy' ? 'text-green-500' : 'text-red-400')}>{t.side.toUpperCase()}</td>
-                      <td className="px-3 py-2 font-mono">${t.price.toLocaleString()}</td>
-                      <td className="px-3 py-2 font-mono">{t.amount}</td>
-                      <td className="px-3 py-2 font-mono">${t.total_usd.toLocaleString()}</td>
-                      <td className="px-3 py-2 text-right text-green-500 font-semibold">{t.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {history.length === 0 && (
-                <div className="h-32 flex flex-col items-center justify-center text-muted-foreground/30 uppercase tracking-[0.2em] text-[10px]">
-                  No trade history
-                </div>
-              )}
+            <div className="ml-auto">
+              <RefreshCw className="w-3.5 h-3.5 text-muted-foreground animate-spin" style={{ animationDuration: "3s" }} />
             </div>
           </div>
+
+          {/* Candlestick chart */}
+          <div className="flex-1 p-2 min-h-[260px] max-h-[400px]">
+            <CandleChart pair={activePair} />
+          </div>
+
+          {/* Bottom orders panel */}
+          <BottomPanel />
         </div>
 
-        {/* ─ Right Column: Order Form ─ */}
-        <div className="w-[280px] border-l border-border shrink-0 flex flex-col overflow-hidden hidden lg:flex">
-          <div className="flex-1 overflow-hidden flex flex-col border-b border-border">
-            <div className="px-3 py-2 border-b border-border flex items-center justify-between">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Order Book (Simulated)</p>
-            </div>
-            <div className="grid grid-cols-3 px-3 py-1.5 text-[9px] font-semibold uppercase tracking-widest text-muted-foreground/50">
-              <span>Price</span><span className="text-right">Qty</span><span className="text-right">Total</span>
-            </div>
-            <div className="flex-1 overflow-hidden space-y-[2px]">
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="relative grid grid-cols-3 px-3 py-[2px] text-red-400/80 font-mono text-[10px]">
-                   <span>{(currentPrice * (1 + i * 0.0001)).toFixed(2)}</span>
-                   <span className="text-right">{(Math.random() * 2).toFixed(3)}</span>
-                   <span className="text-right text-muted-foreground">{(Math.random() * 10).toFixed(1)}k</span>
-                </div>
-              ))}
-              <div className="px-3 py-2 bg-secondary/30 border-y border-border flex items-center justify-between">
-                 <span className="text-sm font-black text-foreground">${currentPrice.toLocaleString()}</span>
-              </div>
-              {[1,2,3,4,5].map(i => (
-                <div key={i} className="relative grid grid-cols-3 px-3 py-[2px] text-green-500/80 font-mono text-[10px]">
-                   <span>{(currentPrice * (1 - i * 0.0001)).toFixed(2)}</span>
-                   <span className="text-right">{(Math.random() * 2).toFixed(3)}</span>
-                   <span className="text-right text-muted-foreground">{(Math.random() * 10).toFixed(1)}k</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-3 space-y-3 shrink-0">
-            <div className="grid grid-cols-2 gap-1 p-1 bg-secondary rounded-xl">
-              <button onClick={() => setSide("buy")} className={cn("h-8 rounded-lg text-xs font-bold transition-all", side === "buy" ? "bg-green-500 text-white shadow-glow-green" : "text-muted-foreground hover:text-foreground")}>Buy</button>
-              <button onClick={() => setSide("sell")} className={cn("h-8 rounded-lg text-xs font-bold transition-all", side === "sell" ? "bg-red-500 text-white" : "text-muted-foreground hover:text-foreground")}>Sell</button>
-            </div>
-
-            {status && (
-              <div className={cn("p-2.5 rounded-lg text-[10px] font-bold flex items-center gap-2", status.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-400')}>
-                {status.type === 'success' ? <Check className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
-                {status.msg}
-              </div>
-            )}
-
-            <div className="flex gap-1">
-              {ORDER_TYPES.map(ot => (
-                <button key={ot} onClick={() => setOrderType(ot)} className={cn("px-2.5 h-6 rounded-lg text-[10px] font-medium flex-1 transition-all", orderType === ot ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground")}>{ot}</button>
-              ))}
-            </div>
-
-            <div>
-              <label className="text-[10px] text-muted-foreground mb-1 block">Amount ({activeAsset?.symbol.toUpperCase()})</label>
-              <input
-                type="number" value={amount} onChange={e => setAmount(e.target.value)}
-                placeholder="0.00000"
-                className="w-full h-9 px-3 text-xs font-mono bg-secondary border border-border rounded-xl outline-none focus:border-primary/50"
-              />
-            </div>
-
-            <div className="grid grid-cols-4 gap-1">
-              {PERCENT_STEPS.map(p => (
-                <button 
-                  key={p} 
-                  onClick={() => {
-                    const bal = side === "buy" ? availableUsdt : availableBase;
-                    const val = side === "buy" ? (bal * (p/100)) / currentPrice : bal * (p/100);
-                    setAmount(val.toFixed(6));
-                  }}
-                  className="h-6 rounded-lg text-[10px] font-semibold bg-secondary text-muted-foreground hover:text-foreground transition-all"
-                >
-                  {p}%
-                </button>
-              ))}
-            </div>
-
-            {totalUsdt > 0 && (
-              <div className="flex justify-between items-center text-[11px]">
-                <span className="text-muted-foreground">Total Value</span>
-                <span className="font-bold font-mono">${totalUsdt.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-              </div>
-            )}
-
-            <button
-              disabled={submitting || !amount || parseFloat(amount) <= 0}
-              onClick={handleSubmit}
-              className={cn(
-                "w-full h-10 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2",
-                side === "buy" ? "bg-green-500 text-white hover:bg-green-600 shadow-glow-green" : "bg-red-500 text-white hover:bg-red-600",
-                submitting && "opacity-60 cursor-not-allowed"
-              )}
-            >
-              {submitting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : side.toUpperCase() + " " + activeAsset?.symbol.toUpperCase()}
-            </button>
-
-            <p className="text-[9px] text-muted-foreground/60 text-center">
-              Available: {side === "buy" ? `$${availableUsdt.toLocaleString()}` : `${availableBase.toFixed(6)} ${activeAsset?.symbol.toUpperCase()}`}
-            </p>
-          </div>
+        {/* Buy/Sell panel — right */}
+        <div className="w-full lg:w-64 xl:w-72 shrink-0 border-t lg:border-t-0 lg:border-l border-border bg-card/30">
+          <OrderPanel pair={activePair} />
         </div>
       </div>
+
+      <Footer />
     </div>
   );
 }

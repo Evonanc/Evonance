@@ -6,32 +6,28 @@ import {
   MarketsPreview,
   CardFeatureSection,
   FeaturesSection,
+  HowItWorksSection,
+  TrustBar,
   SocialProofSection,
   CTASection,
 } from "@/components/shared/home-sections";
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen bg-background">
-      {/* 
-          Fixed Navbar (z-50) occupies 64px (h-16).
-          We add a spacer to push content below the fixed header.
-          MarketTicker follows, then the sections with their internal padding.
-      */}
+    <main className="min-h-screen bg-background page-fade">
       <Navbar />
       <div className="h-16 md:h-20" aria-hidden="true" />
-
       <MarketTicker />
-      
       <div className="relative">
         <HeroSection />
+        <TrustBar />
         <MarketsPreview />
+        <HowItWorksSection />
         <CardFeatureSection />
         <FeaturesSection />
         <SocialProofSection />
         <CTASection />
       </div>
-
       <Footer />
     </main>
   );

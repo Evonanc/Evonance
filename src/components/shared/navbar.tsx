@@ -132,9 +132,9 @@ export function Navbar() {
                     </Link>
                     <Link
                       href="/signup"
-                      className="px-4 py-2 text-sm font-semibold rounded-xl ev-gradient text-white transition-all duration-200 hover:opacity-90 shadow-glow-primary btn-glow"
+                      className="btn-amber h-9 px-5 text-sm shadow-amber"
                     >
-                      Get Started
+                      Start for Free
                     </Link>
                   </>
                 )
@@ -202,9 +202,9 @@ export function Navbar() {
                       <Link
                         href="/signup"
                         onClick={() => setMobileOpen(false)}
-                        className="w-full py-3 text-center text-sm font-semibold rounded-xl ev-gradient text-white shadow-glow-primary"
+                        className="btn-amber w-full py-3 text-sm text-center"
                       >
-                        Get Started Free
+                        Start for Free
                       </Link>
                     </>
                   )

@@ -2,6 +2,9 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
 @layer base {
   :root {
     /* ─── LIGHT MODE ──────────────────────────────── */
@@ -263,6 +266,110 @@
   /* ── Custom highlight bar ── */
   .active-nav-indicator {
     @apply absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full;
-    background: #0052FF;
+    background: #F5A623;
+  }
+
+  /* ══════════════════════════════════════════════════════
+     AMBER CTA SYSTEM
+     Primary CTA: #F5A623 → #E8853A (works on both themes)
+  ══════════════════════════════════════════════════════ */
+  .amber-gradient {
+    background: linear-gradient(135deg, #F5A623 0%, #E8853A 100%);
+  }
+  .amber-gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: linear-gradient(135deg, #F5A623 0%, #E8853A 100%);
+  }
+  .btn-amber {
+    @apply inline-flex items-center justify-center gap-2 font-semibold text-white rounded-[6px] transition-all duration-150;
+    background: linear-gradient(135deg, #F5A623 0%, #E8853A 100%);
+    box-shadow: 0 0 0 0 rgba(245, 166, 35, 0);
+  }
+  .btn-amber:hover {
+    box-shadow: 0 0 20px rgba(245, 166, 35, 0.40), 0 4px 16px rgba(232, 133, 58, 0.25);
+    filter: brightness(1.05);
+  }
+  .btn-amber:active {
+    transform: scale(0.97);
+  }
+  .btn-amber:focus-visible {
+    outline: 2px solid #F5A623;
+    outline-offset: 2px;
+  }
+  .btn-amber-outline {
+    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-[6px] transition-all duration-150;
+    border: 1px solid #F5A623;
+    color: #F5A623;
+    background: transparent;
+  }
+  .btn-amber-outline:hover {
+    background: rgba(245, 166, 35, 0.08);
+  }
+  .btn-amber-outline:active {
+    transform: scale(0.97);
+  }
+
+  /* ── Theme transition — smooth 200ms color shifts ── */
+  .transition-theme {
+    transition: background-color 200ms ease, color 200ms ease,
+      border-color 200ms ease, box-shadow 200ms ease,
+      fill 200ms ease, stroke 200ms ease;
+  }
+
+  /* ── Enhanced dot-pattern with theme-aware opacity ── */
+  .dot-bg {
+    background-image: radial-gradient(circle, rgba(0,0,0,0.08) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+  .dark .dot-bg {
+    background-image: radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* ── Page fade transition ── */
+  .page-fade {
+    animation: pageFade 150ms ease-in-out;
+  }
+  @keyframes pageFade {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Amber glow ── */
+  .shadow-amber {
+    box-shadow: 0 0 20px rgba(245,166,35,0.35), 0 4px 16px rgba(245,166,35,0.20);
+  }
+  .shadow-amber:hover {
+    box-shadow: 0 0 32px rgba(245,166,35,0.50), 0 8px 24px rgba(245,166,35,0.30);
+  }
+
+  /* ── Secondary button — theme-aware border/outline ── */
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 font-semibold rounded-[6px] transition-all duration-150;
+    border: 1px solid hsl(var(--border));
+    color: hsl(var(--foreground));
+    background: transparent;
+  }
+  .btn-secondary:hover {
+    background: hsl(var(--secondary));
+  }
+  .btn-secondary:active {
+    transform: scale(0.97);
+  }
+
+  /* ── Ghost button ── */
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 font-medium rounded-[6px] transition-all duration-150;
+    color: hsl(var(--muted-foreground));
+    background: transparent;
+    border: none;
+  }
+  .btn-ghost:hover {
+    color: hsl(var(--foreground));
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  .btn-ghost:active {
+    transform: scale(0.97);
   }
 }

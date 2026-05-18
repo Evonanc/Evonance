@@ -86,7 +86,7 @@ export function HeroSection() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-3 mb-12">
               <Link
                 href="/signup"
-                className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl ev-gradient text-white font-semibold text-sm shadow-glow-primary transition-all hover:opacity-90 w-full sm:w-auto"
+                className="btn-amber h-12 px-8 text-sm w-full sm:w-auto shadow-amber"
               >
                 Start for Free <ArrowRight className="w-4 h-4" />
               </Link>
@@ -285,7 +285,7 @@ export function CardFeatureSection() {
             </ul>
             <Link
               href="/signup"
-              className="inline-flex items-center gap-2 h-12 px-6 rounded-xl ev-gradient text-white font-semibold text-sm shadow-glow-primary transition-all hover:opacity-90"
+              className="btn-amber h-12 px-6 text-sm shadow-amber"
             >
               Get Your Card <ArrowRight className="w-4 h-4" />
             </Link>
@@ -428,15 +428,26 @@ export function SocialProofSection() {
             >
               <div className="flex gap-0.5 mb-4">
                 {[1, 2, 3, 4, 5].map((s) => (
-                  <svg key={s} className="w-4 h-4 text-yellow-400 fill-current" viewBox="0 0 20 20">
+                  <svg key={s} className="w-4 h-4 text-amber-400 fill-current" viewBox="0 0 20 20">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
                   </svg>
                 ))}
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed mb-5">&ldquo;{r.text}&rdquo;</p>
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl ev-gradient flex items-center justify-center text-xs font-black text-white shrink-0">
-                  {r.init}
+                {/* Geometric avatar circle */}
+                <div className="w-9 h-9 rounded-full shrink-0 overflow-hidden">
+                  <svg viewBox="0 0 36 36" className="w-full h-full">
+                    <defs>
+                      <linearGradient id={`ag-${i}`} x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stopColor={["#F5A623","#3B82F6","#22C55E"][i % 3]} />
+                        <stop offset="100%" stopColor={["#E8853A","#7C3AED","#0052FF"][i % 3]} />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="18" cy="18" r="18" fill={`url(#ag-${i})`} />
+                    <polygon points="18,6 26,14 22,26 14,26 10,14" fill="rgba(255,255,255,0.15)" />
+                    <text x="18" y="22" textAnchor="middle" fontSize="11" fontWeight="700" fill="white" fontFamily="Inter,sans-serif">{r.init}</text>
+                  </svg>
                 </div>
                 <div>
                   <p className="text-sm font-bold leading-none">{r.name}</p>
@@ -457,41 +468,146 @@ export function CTASection() {
     <section className="py-20 md:py-32 bg-secondary/20">
       <div className="page-container">
         <div
-          className="relative rounded-3xl p-10 md:p-16 text-center text-white overflow-hidden"
-          style={{ background: "linear-gradient(135deg, #0052FF 0%, #7C3AED 100%)" }}
+          className="relative rounded-3xl p-10 md:p-16 text-center overflow-hidden"
+          style={{ background: "linear-gradient(135deg, #0D1220 0%, #1a2035 100%)" }}
         >
           <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-3xl">
-            <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-white/8" />
-            <div className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full bg-white/6" />
+            <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full" style={{ background: "radial-gradient(circle, rgba(245,166,35,0.15), transparent 70%)" }} />
+            <div className="absolute -bottom-16 -left-16 w-48 h-48 rounded-full" style={{ background: "radial-gradient(circle, rgba(59,130,246,0.12), transparent 70%)" }} />
+            <div className="absolute inset-0 dot-bg opacity-30" />
           </div>
 
           <div className="relative z-10 max-w-2xl mx-auto">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/60 mb-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/50 mb-4">
               Get Started Today
             </p>
-            <h2 className="text-3xl md:text-4xl lg:text-5xl font-black font-display text-white mb-5 leading-snug tracking-tight">
+            <h2 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-5 leading-snug tracking-tight">
               Start Your Crypto Journey
               <br /> in Under 2 Minutes
             </h2>
-            <p className="text-white/70 text-base mb-8">
+            <p className="text-white/60 text-base mb-8">
               Join 220,000+ traders building wealth with EVONANCE.
               No minimum deposit. Zero hidden fees.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <Link
                 href="/signup"
-                className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl bg-white text-primary font-bold text-sm transition-all hover:bg-white/90"
+                className="btn-amber h-12 px-8 text-sm shadow-amber"
               >
                 Create Free Account
               </Link>
               <Link
                 href="/markets"
-                className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl border border-white/25 text-white font-semibold text-sm transition-all hover:bg-white/10"
+                className="inline-flex items-center justify-center gap-2 h-12 px-8 rounded-xl border border-white/20 text-white font-semibold text-sm transition-all hover:bg-white/10"
               >
                 View Live Markets
               </Link>
             </div>
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── How It Works ──────────────────────────────────────────────────
+export function HowItWorksSection() {
+  const STEPS = [
+    {
+      step: "01",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+        </svg>
+      ),
+      title: "Create Account",
+      desc: "Sign up in under 2 minutes. No minimums, no paperwork. Just your email and a strong password.",
+    },
+    {
+      step: "02",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+        </svg>
+      ),
+      title: "Fund Your Wallet",
+      desc: "Deposit crypto or fiat via bank wire, card, or direct transfer. Funds available instantly.",
+    },
+    {
+      step: "03",
+      icon: (
+        <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+        </svg>
+      ),
+      title: "Trade or Spend",
+      desc: "Execute trades with institutional-grade tools or spend your crypto with a USD Virtual Card.",
+    },
+  ];
+
+  return (
+    <section className="py-20 md:py-32 bg-background">
+      <div className="page-container">
+        <div className="text-center mb-14">
+          <p className="text-label mb-3">Simple Onboarding</p>
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-black tracking-tight leading-snug">
+            Up and Running in{" "}
+            <span className="amber-gradient-text">3 Steps</span>
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 relative">
+          {/* Connector lines (desktop only) */}
+          <div className="hidden md:block absolute top-12 left-[calc(16.66%+2rem)] right-[calc(16.66%+2rem)] h-px border-t border-dashed border-border" />
+          {STEPS.map((step, i) => (
+            <motion.div
+              key={step.step}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.12, duration: 0.45 }}
+              className="flex flex-col items-center text-center"
+            >
+              <div className="relative mb-6">
+                <div className="w-24 h-24 rounded-3xl ev-card flex items-center justify-center shadow-ev-2">
+                  <div className="w-14 h-14 rounded-2xl amber-gradient flex items-center justify-center text-white">
+                    {step.icon}
+                  </div>
+                </div>
+                <span className="absolute -top-2 -right-2 w-6 h-6 rounded-full amber-gradient text-white text-[10px] font-black flex items-center justify-center">
+                  {step.step}
+                </span>
+              </div>
+              <h3 className="text-lg font-bold mb-2">{step.title}</h3>
+              <p className="text-sm text-muted-foreground leading-relaxed max-w-[240px]">{step.desc}</p>
+            </motion.div>
+          ))}
+        </div>
+        <div className="text-center mt-12">
+          <Link href="/signup" className="btn-amber h-12 px-8 text-sm shadow-amber">
+            Get Started Free <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Trust / Partners Bar ──────────────────────────────────────────
+export function TrustBar() {
+  const PARTNERS = ["Visa", "Fireblocks", "AWS", "Chainalysis", "Supabase"];
+  return (
+    <section className="py-14 border-y border-border bg-secondary/20">
+      <div className="page-container">
+        <p className="text-center text-label mb-8">Trusted Infrastructure</p>
+        <div className="flex flex-wrap items-center justify-center gap-8 md:gap-14">
+          {PARTNERS.map((p) => (
+            <span
+              key={p}
+              className="text-lg font-black tracking-tight text-muted-foreground/50 hover:text-muted-foreground transition-colors duration-200 select-none"
+            >
+              {p}
+            </span>
+          ))}
         </div>
       </div>
     </section>
