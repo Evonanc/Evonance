@@ -4,9 +4,19 @@ import { NextResponse, type NextRequest } from "next/server";
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  const isMock = !supabaseUrl || supabaseUrl.includes("your-project") || !supabaseAnonKey;
+
+  if (isMock) {
+    // In mock mode, we allow access to everything for testing purposes
+    return supabaseResponse;
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    supabaseUrl,
+    supabaseAnonKey,
     {
       cookies: {
         getAll() {
@@ -22,13 +32,6 @@ export async function middleware(request: NextRequest) {
       },
     }
   );
-
-  const isMock = !process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL.includes("your-project");
-
-  if (isMock) {
-    // In mock mode, we allow access to everything for testing purposes
-    return supabaseResponse;
-  }
 
   // Refresh session — IMPORTANT: do not remove this call
   const { data: { user } } = await supabase.auth.getUser();
