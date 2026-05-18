@@ -13,7 +13,7 @@ export default function ForgotPasswordPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    await new Promise(r => setTimeout(r, 1000)); // simulate
+    await new Promise(r => setTimeout(r, 1000));
     setLoading(false);
     setSent(true);
   };
@@ -37,7 +37,8 @@ export default function ForgotPasswordPage() {
             </div>
             <h1 className="text-2xl font-black mb-2">Check your inbox</h1>
             <p className="text-sm text-muted-foreground leading-relaxed mb-6">
-              We sent a password reset link to <strong className="text-foreground">{email}</strong>.
+              We sent a password reset link to{" "}
+              <strong className="text-foreground">{email}</strong>.
               Check your spam folder if you don&apos;t see it.
             </p>
             <Link href="/login" className="btn-amber h-11 px-6 text-sm shadow-amber">
@@ -56,15 +57,25 @@ export default function ForgotPasswordPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="text-xs font-medium text-foreground/80 block mb-1.5">Email address</label>
+                <label className="text-xs font-medium text-foreground/80 block mb-1.5">
+                  Email address
+                </label>
                 <input
                   id="forgot-email"
-                  type="email" value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="you@example.com" required className="ev-input"
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  required
+                  className="ev-input"
                 />
               </div>
-              <button type="submit" disabled={loading} id="forgot-submit"
-                className="btn-amber w-full h-11 text-sm shadow-amber disabled:opacity-60">
+              <button
+                type="submit"
+                disabled={loading}
+                id="forgot-submit"
+                className="btn-amber w-full h-11 text-sm shadow-amber disabled:opacity-60"
+              >
                 {loading
                   ? <div className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                   : <>Send Reset Link <ArrowRight className="w-4 h-4" /></>
@@ -74,7 +85,9 @@ export default function ForgotPasswordPage() {
 
             <p className="text-center text-xs text-muted-foreground mt-5">
               Remember your password?{" "}
-              <Link href="/login" className="font-semibold hover:underline" style={{ color: "#F5A623" }}>Sign in</Link>
+              <Link href="/login" className="font-semibold hover:underline" style={{ color: "#F5A623" }}>
+                Sign in
+              </Link>
             </p>
           </>
         )}
