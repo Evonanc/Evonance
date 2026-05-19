@@ -1,0 +1,463 @@
+import { useState, useMemo } from 'react';
+import Navigation from '../components/Navigation';
+import { 
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip 
+} from 'recharts';
+import { 
+  ArrowUpRight, ArrowDownRight, 
+  TrendingUp, Wallet, ArrowLeftRight, CreditCard, 
+  ArrowUp, ArrowDown, BookOpen, Eye, EyeOff, CheckCircle2, ChevronRight
+} from 'lucide-react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { fadeUp, scaleIn, slideInRight, staggerContainer, staggerFast } from '../lib/animations';
+import { useCountUp } from '../hooks/useCountUp';
+import { useCryptoData } from '../hooks/useCryptoData';
+import { formatPrice } from '../lib/crypto';
+
+function CountUpText({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
+  const { ref, value } = useCountUp(target, 1500, prefix, suffix, decimals);
+  return <span ref={ref}>{value}</span>;
+}
+
+export default function Dashboard() {
+  const shouldReduceMotion = useReducedMotion();
+  const [hideBalance, setHideBalance] = useState(false);
+
+  // Live Crypto Data Hook (WebSocket enabled)
+  const { coins, loading, wsConnected } = useCryptoData();
+
+  // Watchlist: replace hardcoded prices and changes with real live values for AVAX, MATIC, DOT, LINK
+  const watchlist = useMemo(() => {
+    const watchlistSymbols = ['AVAX', 'MATIC', 'DOT', 'LINK'];
+    const names: Record<string, string> = {
+      AVAX: 'Avalanche',
+      MATIC: 'Polygon',
+      DOT: 'Polkadot',
+      LINK: 'Chainlink'
+    };
+    return watchlistSymbols.map(sym => {
+      const coin = coins.find(c => c.symbol === sym);
+      const price = coin?.price ?? 0;
+      const change24h = coin?.change24h ?? 0;
+      const isUp = change24h >= 0;
+      return {
+        symbol: sym,
+        name: names[sym] || sym,
+        price,
+        change: `${isUp ? '+' : ''}${change24h.toFixed(2)}%`,
+        isUp
+      };
+    });
+  }, [coins]);
+
+  const chartData = [
+    { name: 'Jan', value: 98000 },
+    { name: 'Feb', value: 115000 },
+    { name: 'Mar', value: 108000 },
+    { name: 'Apr', value: 128000 },
+    { name: 'May', value: 122000 },
+    { name: 'Jun', value: 142080 },
+  ];
+
+  // holdings: replace the hardcoded change24h values with real values from Bybit for BTC, ETH, SOL, BNB
+  const holdings = useMemo(() => {
+    const staticHoldings = [
+      { name: 'Bitcoin', symbol: 'BTC', amount: '1.245 BTC', value: '$83,707.02', allocation: '58.9%', defaultChange: 2.34 },
+      { name: 'Ethereum', symbol: 'ETH', amount: '8.450 ETH', value: '$29,209.79', allocation: '20.6%', defaultChange: -1.23 },
+      { name: 'Solana', symbol: 'SOL', amount: '124.3 SOL', value: '$17,692.86', allocation: '12.5%', defaultChange: 5.67 },
+      { name: 'Tether', symbol: 'USDT', amount: '11,470 USDT', value: '$11,470.33', allocation: '8.0%', defaultChange: 0.01 },
+    ];
+
+    return staticHoldings.map(h => {
+      const coin = coins.find(c => c.symbol === h.symbol);
+      return {
+        ...h,
+        change24h: coin ? coin.change24h : h.defaultChange
+      };
+    });
+  }, [coins]);
+
+  const transactions = [
+    { type: 'Swap', desc: 'Sold ETH for USDT', amount: '-1.50 ETH', value: '+$5,185.17', time: '2 hours ago', status: 'completed' },
+    { type: 'Received', desc: 'Deposit from external wallet', amount: '+0.045 BTC', value: '+$3,025.56', time: '1 day ago', status: 'completed' },
+    { type: 'Sent', desc: 'Transfer to John Doe', amount: '-50.00 SOL', value: '-$7,117.00', time: '3 days ago', status: 'completed' },
+    { type: 'Card Funding', desc: 'Funded Primary Card', amount: '-500.00 USDT', value: '-$500.00', time: '4 days ago', status: 'completed' },
+  ];
+
+  const newsList = [
+    { title: 'Bitcoin surges past key resistance level', source: 'Bloomberg', time: '1 hour ago' },
+    { title: 'DeFi TVL surges by $12B in active multi-chain deposits', source: 'CoinDesk', time: '4 hours ago' },
+    { title: 'USDT supply hits new high as demand increases', source: 'The Block', time: '7 hours ago' },
+  ];
+
+  const quickActions = [
+    { label: 'Send', icon: ArrowUp, href: '/trade', color: 'text-primary bg-primary/10' },
+    { label: 'Receive', icon: ArrowDown, href: '/trade', color: 'text-success bg-success/10' },
+    { label: 'Deposit', icon: Wallet, href: '/trade', color: 'text-warning bg-warning/10' },
+    { label: 'Withdraw', icon: CreditCard, href: '/trade', color: 'text-indigo-500 bg-indigo-500/10' },
+    { label: 'Swap', icon: ArrowLeftRight, href: '/swap', color: 'text-pink-500 bg-pink-500/10' },
+    { label: 'Trade', icon: TrendingUp, href: '/trade', color: 'text-cyan-500 bg-cyan-500/10' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      <Navigation isPublic={false} />
+
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-8">
+        
+        {/* Style block for chart gradient pulse animations */}
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes gradientPulse {
+            0% { fill-opacity: 0.25; }
+            50% { fill-opacity: 0.45; }
+            100% { fill-opacity: 0.25; }
+          }
+          .chart-pulse-fill {
+            animation: gradientPulse 4s infinite ease-in-out;
+          }
+        `}} />
+
+        {/* 2x3 responsive structure */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          
+          {/* Portfolio Card */}
+          <motion.div 
+            initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
+            animate={shouldReduceMotion ? {} : { opacity: 1, scale: 1 }}
+            transition={{ duration: 0.4, delay: 0.1 }}
+            className="lg:col-span-2 bg-card border border-border rounded-2xl p-6 lg:p-8 shadow-sm flex flex-col justify-between"
+          >
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Total Portfolio Balance</span>
+                <button 
+                  onClick={() => setHideBalance(!hideBalance)}
+                  className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  {hideBalance ? (
+                    <>
+                      <Eye className="w-4 h-4" />
+                      <span>Show Balance</span>
+                    </>
+                  ) : (
+                    <>
+                      <EyeOff className="w-4 h-4" />
+                      <span>Hide Balance</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex items-baseline gap-4 mb-2">
+                <span className="text-4xl lg:text-5xl font-black text-foreground font-mono tracking-tight">
+                  {hideBalance ? (
+                    '••••••••'
+                  ) : (
+                    <CountUpText target={142080.00} decimals={2} prefix="$" />
+                  )}
+                </span>
+                <span className="text-success text-sm font-bold bg-success/10 px-2.5 py-1 rounded-lg flex items-center gap-0.5">
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  <span>
+                    <CountUpText target={9.62} decimals={2} suffix="%" />
+                  </span>
+                </span>
+              </div>
+              
+              <div className="text-xs text-muted-foreground flex gap-1 font-mono">
+                <span>Daily P&L:</span>
+                <span className="text-success font-semibold">
+                  {hideBalance ? '••••' : <CountUpText target={12450.00} decimals={2} prefix="+$" />}
+                </span>
+              </div>
+            </div>
+
+            {/* Premium pulsating Recharts AreaChart */}
+            <div className="h-[200px] w-full mt-6">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorPortfolio" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#0066ff" stopOpacity={0.4}/>
+                      <stop offset="95%" stopColor="#0066ff" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="var(--muted-foreground)" 
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    stroke="var(--muted-foreground)" 
+                    fontSize={11}
+                    domain={['dataMin - 10000', 'dataMax + 10000']}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'var(--card)', 
+                      borderColor: 'var(--border)',
+                      borderRadius: '0.75rem',
+                      color: 'var(--foreground)'
+                    }} 
+                  />
+                  <Area 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#0066ff" 
+                    strokeWidth={2.5}
+                    fillOpacity={1} 
+                    fill="url(#colorPortfolio)" 
+                    className="chart-pulse-fill"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </motion.div>
+
+          {/* Quick Actions Panel */}
+          <motion.div 
+            initial={shouldReduceMotion ? {} : 'hidden'}
+            animate={shouldReduceMotion ? {} : 'visible'}
+            variants={slideInRight}
+            transition={{ delay: 0.2 }}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col justify-between"
+          >
+            <div>
+              <h3 className="font-bold text-lg text-foreground mb-6">Quick Actions</h3>
+              <motion.div 
+                variants={staggerFast}
+                className="grid grid-cols-2 gap-4"
+              >
+                {quickActions.map((action) => (
+                  <motion.a
+                    key={action.label}
+                    href={action.href}
+                    variants={shouldReduceMotion ? {} : scaleIn}
+                    whileHover={shouldReduceMotion ? {} : { y: -4, scale: 1.02 }}
+                    whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+                    className="p-4 rounded-xl border border-border bg-background hover:border-primary/40 hover:shadow-sm transition-all flex flex-col items-center gap-3 text-center cursor-pointer"
+                  >
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}>
+                      <action.icon className="w-5 h-5" />
+                    </div>
+                    <span className="text-xs font-semibold text-foreground">{action.label}</span>
+                  </motion.a>
+                ))}
+              </motion.div>
+            </div>
+
+            {/* Visa Card short view */}
+            <div className="mt-6 pt-6 border-t border-border flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-8 rounded-md bg-gradient-to-br from-slate-900 to-slate-800 border border-white/10 flex items-center justify-center shrink-0">
+                  <span className="text-[6px] text-white/50 font-bold tracking-widest font-mono">VISA</span>
+                </div>
+                <div>
+                  <span className="text-xs text-muted-foreground font-semibold block uppercase tracking-wider">USD Visa Balance</span>
+                  <span className="text-base font-bold text-foreground font-mono">$1,250.45</span>
+                </div>
+                <CreditCard className="w-5 h-5 text-primary ml-auto" />
+              </div>
+            </div>
+          </motion.div>
+
+          {/* COL 1: Holdings Assets */}
+          <motion.div 
+            initial={shouldReduceMotion ? {} : 'hidden'}
+            animate={shouldReduceMotion ? {} : 'visible'}
+            variants={fadeUp}
+            transition={{ delay: 0.3 }}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col justify-between"
+          >
+            <div>
+              <h3 className="font-bold text-lg text-foreground mb-6">Holdings</h3>
+              <motion.div 
+                variants={staggerFast}
+                className="divide-y divide-border"
+              >
+                {holdings.map((hold) => {
+                  const isUp = hold.change24h >= 0;
+                  const formattedChange = `${isUp ? '+' : ''}${hold.change24h.toFixed(2)}%`;
+                  return (
+                    <motion.div
+                      key={hold.symbol}
+                      variants={shouldReduceMotion ? {} : fadeUp}
+                      whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
+                      transition={{ duration: 0.15 }}
+                      className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                          {hold.symbol.slice(0, 2)}
+                        </div>
+                        <div>
+                          <p className="font-bold text-sm text-foreground">{hold.name}</p>
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">{hold.amount}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-sm text-foreground font-mono">{hold.value}</p>
+                        <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                          <span className={`text-[9px] font-bold ${isUp ? 'text-success' : 'text-destructive'}`}>
+                            {formattedChange}
+                          </span>
+                          <span className="text-[10px] bg-secondary text-primary font-bold px-2 py-0.5 rounded-full">{hold.allocation}</span>
+                        </div>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </motion.div>
+            </div>
+            
+            <a href="/trade" className="text-xs font-bold text-primary hover:underline flex items-center justify-center gap-1 mt-6">
+              <span>View detailed wallet balances</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </a>
+          </motion.div>
+
+          {/* COL 2: Recent Transactions */}
+          <motion.div 
+            initial={shouldReduceMotion ? {} : 'hidden'}
+            animate={shouldReduceMotion ? {} : 'visible'}
+            variants={fadeUp}
+            transition={{ delay: 0.35 }}
+            className="bg-card border border-border rounded-2xl p-6 shadow-sm"
+          >
+            <h3 className="font-bold text-lg text-foreground mb-6">Recent Activity</h3>
+            <motion.div 
+              variants={staggerFast}
+              className="space-y-4"
+            >
+              {transactions.map((tx, i) => (
+                <motion.div 
+                  key={i}
+                  variants={shouldReduceMotion ? {} : fadeUp}
+                  className="flex items-center justify-between"
+                >
+                  <div className="flex gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
+                      {tx.type === 'Swap' && <ArrowLeftRight className="w-4 h-4 text-pink-500" />}
+                      {tx.type === 'Received' && <ArrowDown className="w-4 h-4 text-success" />}
+                      {tx.type === 'Sent' && <ArrowUp className="w-4 h-4 text-primary" />}
+                      {tx.type === 'Card Funding' && <CreditCard className="w-4 h-4 text-indigo-500" />}
+                    </div>
+                    <div>
+                      <p className="font-bold text-xs text-foreground leading-none mb-1">{tx.desc}</p>
+                      <p className="text-[10px] text-muted-foreground">{tx.time}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="font-bold text-xs text-foreground font-mono">{tx.amount}</p>
+                    <p className="text-[10px] text-muted-foreground font-mono">{tx.value}</p>
+                  </div>
+                </motion.div>
+              ))}
+            </motion.div>
+          </motion.div>
+
+          {/* COL 3: Watchlist & News */}
+          <div className="space-y-6">
+            
+            {/* Watchlist */}
+            <motion.div 
+              initial={shouldReduceMotion ? {} : 'hidden'}
+              animate={shouldReduceMotion ? {} : 'visible'}
+              variants={fadeUp}
+              transition={{ delay: 0.4 }}
+              className="bg-card border border-border rounded-2xl p-6 shadow-sm"
+            >
+              <h3 className="font-bold text-lg text-foreground mb-6">Market Watchlist</h3>
+              <motion.div 
+                variants={staggerFast}
+                className="space-y-3"
+              >
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="flex items-center justify-between p-3 border border-border/50 rounded-xl bg-background animate-pulse">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-secondary shrink-0" />
+                        <div className="space-y-1">
+                          <div className="h-3 w-10 bg-secondary rounded" />
+                          <div className="h-2.5 w-16 bg-secondary rounded" />
+                        </div>
+                      </div>
+                      <div className="space-y-1 text-right flex flex-col items-end">
+                        <div className="h-3 w-16 bg-secondary rounded" />
+                        <div className="h-2.5 w-8 bg-secondary rounded" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  watchlist.map((item) => (
+                    <motion.div
+                      key={item.symbol}
+                      variants={shouldReduceMotion ? {} : fadeUp}
+                      className="flex items-center justify-between p-3 border border-border/50 rounded-xl bg-background"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
+                          {item.symbol}
+                        </div>
+                        <div>
+                          <p className="font-bold text-xs text-foreground">{item.symbol}</p>
+                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">{item.name}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-xs text-foreground font-mono">
+                          <AnimatePresence mode="popLayout" initial={false}>
+                            <motion.span
+                              key={item.price}
+                              initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
+                              transition={{ duration: 0.2 }}
+                              className="inline-block"
+                            >
+                              ${formatPrice(item.price)}
+                            </motion.span>
+                          </AnimatePresence>
+                        </p>
+                        <span className={`text-[9px] font-bold flex items-center justify-end gap-0.5 ${item.isUp ? 'text-success' : 'text-destructive'}`}>
+                          {item.isUp ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                          <span>{item.change}</span>
+                        </span>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
+              </motion.div>
+            </motion.div>
+
+            {/* News */}
+            <motion.div 
+              initial={shouldReduceMotion ? {} : 'hidden'}
+              animate={shouldReduceMotion ? {} : 'visible'}
+              variants={fadeUp}
+              transition={{ delay: 0.45 }}
+              className="bg-card border border-border rounded-2xl p-6 shadow-sm"
+            >
+              <h3 className="font-bold text-lg text-foreground mb-6">Bloomberg Crypto</h3>
+              <div className="space-y-4">
+                {newsList.map((news, i) => (
+                  <div key={i} className="border-l-2 border-primary/45 pl-3 py-1">
+                    <p className="text-xs text-muted-foreground mb-1 uppercase font-semibold tracking-wider">{news.source} • {news.time}</p>
+                    <a href="#" className="font-bold text-xs text-foreground hover:text-primary transition-colors line-clamp-2 leading-relaxed">
+                      {news.title}
+                    </a>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
