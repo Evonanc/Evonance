@@ -251,16 +251,17 @@ create table if not exists public.user_settings (
 -- ROW LEVEL SECURITY POLICIES
 -- ════════════════════════════════════════════════════════════════════════════════
 
-alter table public.user_profiles    enable row level security;
-alter table public.wallets          enable row level security;
-alter table public.wallet_balances  enable row level security;
-alter table public.transactions     enable row level security;
-alter table public.swaps            enable row level security;
-alter table public.trades           enable row level security;
-alter table public.virtual_cards    enable row level security;
+alter table public.user_profiles     enable row level security;
+alter table public.wallets           enable row level security;
+alter table public.supported_assets  enable row level security;
+alter table public.wallet_balances   enable row level security;
+alter table public.transactions      enable row level security;
+alter table public.swaps             enable row level security;
+alter table public.trades            enable row level security;
+alter table public.virtual_cards     enable row level security;
 alter table public.card_transactions enable row level security;
-alter table public.notifications    enable row level security;
-alter table public.user_settings    enable row level security;
+alter table public.notifications     enable row level security;
+alter table public.user_settings     enable row level security;
 
 -- user_profiles
 create policy "Users read own profile"   on public.user_profiles for select using (auth.uid() = id);
