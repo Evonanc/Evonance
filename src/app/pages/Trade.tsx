@@ -40,7 +40,7 @@ export default function Trade() {
   const [isSubmitClicked, setIsSubmitClicked] = useState(false);
 
   // Live Crypto Data Hook (WebSocket enabled)
-  const { coins, loading, wsConnected, lastUpdated } = useCryptoData();
+  const { coins, loading, wsConnected, source, lastUpdated } = useCryptoData();
 
   // Timestamp updated seconds ago count up
   const [secondsAgo, setSecondsAgo] = useState(0);
@@ -306,7 +306,7 @@ export default function Trade() {
           <div className="bg-card border border-border rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="font-bold text-lg text-foreground">{selectedPair.symbol}</span>
-              <LiveIndicator wsConnected={wsConnected} loading={loading} />
+              <LiveIndicator wsConnected={wsConnected} loading={loading} source={source} />
               
               <span className={`text-lg font-bold font-mono transition-colors duration-200 ${
                 activeCoin 

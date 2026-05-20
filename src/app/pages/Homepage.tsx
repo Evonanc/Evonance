@@ -50,7 +50,7 @@ function TickerPriceSpan({ price, change24h }: { price: number; change24h: numbe
 
 export default function Homepage() {
   const shouldReduceMotion = useReducedMotion();
-  const { coins, loading, wsConnected } = useTopCoins();
+  const { coins, loading, wsConnected, source } = useTopCoins();
 
   const features = [
     { icon: Wallet, title: 'Crypto Wallet', desc: 'Securely store and manage multiple cryptocurrencies in our bank-grade non-custodial wallet.' },
@@ -285,7 +285,7 @@ export default function Homepage() {
           >
             <div className="flex items-center gap-3">
               <h2 className="text-3xl font-bold text-foreground">Live Markets</h2>
-              <LiveIndicator wsConnected={wsConnected} loading={loading} />
+              <LiveIndicator wsConnected={wsConnected} loading={loading} source={source} />
             </div>
             <Link to="/trade" className="text-sm font-semibold text-primary hover:underline flex items-center gap-1">
               <span>View All Markets</span>
