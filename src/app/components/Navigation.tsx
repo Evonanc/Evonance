@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Link, useLocation } from 'react-router';
+import { useState, useEffect, useRef } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Menu, X } from 'lucide-react';
+import { Sun, Moon, Menu, X, LogOut } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion, Variants } from 'motion/react';
+import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
 
 interface NavigationProps {
   isPublic?: boolean;
@@ -11,8 +13,14 @@ interface NavigationProps {
 export default function Navigation({ isPublic = false }: NavigationProps) {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, loading } = useAuth();
+  
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const shouldReduceMotion = useReducedMotion();
 
   // Scroll detection
@@ -27,6 +35,35 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    setDropdownOpen(false);
+    navigate('/');
+  };
+
+  // Get initials from user metadata or email
+  const getInitials = () => {
+    const name = user?.user_metadata?.full_name as string;
+    if (name) {
+      const parts = name.split(' ');
+      return parts.length >= 2
+        ? (parts[0][0] + parts[1][0]).toUpperCase()
+        : parts[0][0].toUpperCase();
+    }
+    return user?.email?.[0]?.toUpperCase() ?? 'U';
+  };
 
   const publicLinks = [
     { label: 'Features', href: '#features' },
@@ -167,38 +204,92 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
 
             {isPublic ? (
               <>
-                <motion.span
-                  whileHover={shouldReduceMotion ? {} : { y: -1 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-                >
-                  <Link
-                    to="/login"
-                    className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+                {user ? (
+                  <motion.span
+                    whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+                    whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                    className="inline-block"
                   >
-                    Sign In
-                  </Link>
-                </motion.span>
-                <motion.span
-                  whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-                  whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
-                  transition={{ type: 'spring', stiffness: 400, damping: 20 }}
-                  className="inline-block"
-                >
-                  <Link
-                    to="/signup"
-                    className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-all block shadow-sm"
-                  >
-                    Get Started
-                  </Link>
-                </motion.span>
+                    <Link
+                      to="/dashboard"
+                      className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-all block shadow-sm"
+                    >
+                      Go to Dashboard
+                    </Link>
+                  </motion.span>
+                ) : (
+                  <>
+                    <motion.span
+                      whileHover={shouldReduceMotion ? {} : { y: -1 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+                    >
+                      <Link
+                        to="/login"
+                        className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
+                      >
+                        Sign In
+                      </Link>
+                    </motion.span>
+                    <motion.span
+                      whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
+                      whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 20 }}
+                      className="inline-block"
+                    >
+                      <Link
+                        to="/signup"
+                        className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-all block shadow-sm"
+                      >
+                        Get Started
+                      </Link>
+                    </motion.span>
+                  </>
+                )}
               </>
             ) : (
-              <motion.div 
-                whileHover={shouldReduceMotion ? {} : { scale: 1.05 }}
-                className="w-8 h-8 rounded-full bg-primary flex items-center justify-center font-bold text-white text-sm cursor-pointer"
-              >
-                U
-              </motion.div>
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setDropdownOpen(o => !o)}
+                  className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm hover:opacity-90 transition-opacity cursor-pointer focus:outline-none"
+                >
+                  {getInitials()}
+                </button>
+
+                {dropdownOpen && (
+                  <div className="absolute right-0 top-10 w-52 bg-card border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                    <div className="px-4 py-3 border-b border-border">
+                      <p className="text-sm font-medium text-foreground truncate">
+                        {user?.user_metadata?.full_name ?? 'User'}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                    </div>
+                    <div className="py-1">
+                      <button
+                        onClick={() => { navigate('/dashboard'); setDropdownOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                      >
+                        Dashboard
+                      </button>
+                      <button
+                        onClick={() => { navigate('/cards'); setDropdownOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                      >
+                        My Cards
+                      </button>
+                    </div>
+                    <div className="border-t border-border py-1">
+                      <button
+                        onClick={handleLogout}
+                        className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Sign out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </div>
 
@@ -298,20 +389,32 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                   variants={shouldReduceMotion ? {} : navLinksVariants}
                   className="flex flex-col space-y-2 pt-2 border-t border-border"
                 >
-                  <Link
-                    to="/login"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="text-center text-sm font-medium text-muted-foreground hover:text-primary py-2 rounded-lg hover:bg-secondary transition-colors"
-                  >
-                    Sign In
-                  </Link>
-                  <Link
-                    to="/signup"
-                    onClick={() => setMobileMenuOpen(false)}
-                    className="text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-colors"
-                  >
-                    Get Started
-                  </Link>
+                  {user ? (
+                    <Link
+                      to="/dashboard"
+                      onClick={() => setMobileMenuOpen(false)}
+                      className="text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-colors"
+                    >
+                      Go to Dashboard
+                    </Link>
+                  ) : (
+                    <>
+                      <Link
+                        to="/login"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="text-center text-sm font-medium text-muted-foreground hover:text-primary py-2 rounded-lg hover:bg-secondary transition-colors block"
+                      >
+                        Sign In
+                      </Link>
+                      <Link
+                        to="/signup"
+                        onClick={() => setMobileMenuOpen(false)}
+                        className="text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-colors block"
+                      >
+                        Get Started
+                      </Link>
+                    </>
+                  )}
                 </motion.div>
               )}
             </motion.div>

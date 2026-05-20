@@ -1,28 +1,81 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router';
+import { Link, useNavigate, useLocation, Navigate } from 'react-router';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, TrendingUp, Shield, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInRight, staggerContainer } from '../lib/animations';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../hooks/useAuth';
 
 export default function Login() {
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { user, loading: authLoading } = useAuth();
+  const from = (location.state as any)?.from ?? '/dashboard';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
   const [isEmailFocused, setIsEmailFocused] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
   const shouldReduceMotion = useReducedMotion();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Already logged in — redirect away from login page
+  if (!authLoading && user) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
+  // Form submit handler — replaces the old window.location.href redirect
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error('Please enter both email and password');
+      toast.error('Please enter your email and password.');
       return;
     }
-    toast.success('Successfully signed in!');
-    navigate('/dashboard');
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error) throw error;
+      toast.success('Welcome back!');
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      toast.error(err.message ?? 'Login failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Google OAuth handler
+  const handleGoogle = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: { redirectTo: window.location.origin + '/dashboard' },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      toast.error(err.message ?? 'Google login failed');
+    }
+  };
+
+  // GitHub OAuth handler
+  const handleGitHub = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: { redirectTo: window.location.origin + '/dashboard' },
+      });
+      if (error) throw error;
+    } catch (err: any) {
+      toast.error(err.message ?? 'GitHub login failed');
+    }
   };
 
   const staggerForm = {
@@ -142,15 +195,22 @@ export default function Login() {
               <div className="relative">
                 <input
                   id="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   onFocus={() => setIsPasswordFocused(true)}
                   onBlur={() => setIsPasswordFocused(false)}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground transition-all"
+                  className="w-full pr-12 pl-4 py-3 rounded-lg border border-border bg-input-background focus:outline-none focus:ring-2 focus:ring-primary/20 text-foreground transition-all"
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(p => !p)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
                 {!shouldReduceMotion && (
                   <motion.div 
                     initial={{ scaleX: 0 }}
@@ -179,9 +239,15 @@ export default function Login() {
               whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
               whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
               type="submit"
-              className="w-full py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/95 transition-all cursor-pointer shadow-lg shadow-primary/10"
+              disabled={loading}
+              className="w-full py-3 bg-primary text-primary-foreground font-semibold rounded-lg hover:bg-primary/95 transition-all cursor-pointer shadow-lg shadow-primary/10 flex items-center justify-center min-h-[48px]"
             >
-              Sign in
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Signing in...
+                </span>
+              ) : 'Sign in'}
             </motion.button>
           </motion.form>
 
@@ -213,10 +279,7 @@ export default function Login() {
               whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
               whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
               type="button"
-              onClick={() => {
-                toast.success('Google sign in simulated');
-                navigate('/dashboard');
-              }}
+              onClick={handleGoogle}
               className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border bg-background hover:bg-secondary text-sm font-semibold transition-all cursor-pointer"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
@@ -228,10 +291,7 @@ export default function Login() {
               whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
               whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
               type="button"
-              onClick={() => {
-                toast.success('GitHub sign in simulated');
-                navigate('/dashboard');
-              }}
+              onClick={handleGitHub}
               className="flex items-center justify-center gap-2 py-2.5 rounded-lg border border-border bg-background hover:bg-secondary text-sm font-semibold transition-all cursor-pointer"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">

@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Swap from './pages/Swap';
 import Trade from './pages/Trade';
 import CardManagement from './pages/CardManagement';
+import ProtectedRoute from './components/ProtectedRoute';
 
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
@@ -33,10 +34,38 @@ function AnimatedRoutes() {
         <Route path="/" element={<PageTransitionWrapper><Homepage /></PageTransitionWrapper>} />
         <Route path="/login" element={<PageTransitionWrapper><Login /></PageTransitionWrapper>} />
         <Route path="/signup" element={<PageTransitionWrapper><Signup /></PageTransitionWrapper>} />
-        <Route path="/dashboard" element={<PageTransitionWrapper><Dashboard /></PageTransitionWrapper>} />
-        <Route path="/swap" element={<PageTransitionWrapper><Swap /></PageTransitionWrapper>} />
-        <Route path="/trade" element={<PageTransitionWrapper><Trade /></PageTransitionWrapper>} />
-        <Route path="/cards" element={<PageTransitionWrapper><CardManagement /></PageTransitionWrapper>} />
+        
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Dashboard />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/swap" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Swap />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/trade" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Trade />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/cards" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <CardManagement />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
       </Routes>
     </AnimatePresence>
   );
