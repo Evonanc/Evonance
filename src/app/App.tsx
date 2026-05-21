@@ -10,6 +10,7 @@ import Swap from './pages/Swap';
 import Trade from './pages/Trade';
 import CardManagement from './pages/CardManagement';
 import ProtectedRoute from './components/ProtectedRoute';
+import AuthCallback from './pages/AuthCallback';
 
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
@@ -34,6 +35,7 @@ function AnimatedRoutes() {
         <Route path="/" element={<PageTransitionWrapper><Homepage /></PageTransitionWrapper>} />
         <Route path="/login" element={<PageTransitionWrapper><Login /></PageTransitionWrapper>} />
         <Route path="/signup" element={<PageTransitionWrapper><Signup /></PageTransitionWrapper>} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
         
         <Route path="/dashboard" element={
           <ProtectedRoute>
