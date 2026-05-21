@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Navigation from '../components/Navigation';
 import { 
   Settings, ArrowDownUp, Zap, Info, ChevronDown, Check 
@@ -7,6 +7,8 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInLeft, slideInRight, staggerContainer } from '../lib/animations';
 import { useCryptoData } from '../hooks/useCryptoData';
+import { useAuth } from '../hooks/useAuth';
+import { getWallets, upsertWallet, addTransaction, Wallet } from '../lib/db';
 
 interface Token {
   symbol: string;
@@ -20,29 +22,52 @@ interface Token {
 export default function Swap() {
   const shouldReduceMotion = useReducedMotion();
   const { coins } = useCryptoData();
+  const { user } = useAuth();
+  
+  const [dbWallets, setDbWallets] = useState<Wallet[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const loadWallets = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const wallets = await getWallets(user.id);
+      setDbWallets(wallets);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadWallets();
+  }, [loadWallets]);
 
   const tokens: Token[] = useMemo(() => {
     const staticTokens = [
-      { symbol: 'BTC', name: 'Bitcoin', icon: '₿', color: '#f7931a', balance: 1.2345, defaultPrice: 67234.56 },
-      { symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', color: '#627eea', balance: 8.5678, defaultPrice: 3456.78 },
-      { symbol: 'SOL', name: 'Solana', icon: 'S', color: '#00d4aa', balance: 142.34, defaultPrice: 142.34 },
-      { symbol: 'BNB', name: 'BNB', icon: 'B', color: '#f3ba2f', balance: 15.67, defaultPrice: 589.12 },
-      { symbol: 'USDT', name: 'Tether', icon: '₮', color: '#26a17b', balance: 5000.00, defaultPrice: 1.00 },
-      { symbol: 'USDC', name: 'USD Coin', icon: '$', color: '#2775ca', balance: 3200.00, defaultPrice: 1.00 },
+      { symbol: 'BTC', name: 'Bitcoin', icon: '₿', color: '#f7931a', balance: 0, defaultPrice: 67234.56 },
+      { symbol: 'ETH', name: 'Ethereum', icon: 'Ξ', color: '#627eea', balance: 0, defaultPrice: 3456.78 },
+      { symbol: 'SOL', name: 'Solana', icon: 'S', color: '#00d4aa', balance: 0, defaultPrice: 142.34 },
+      { symbol: 'BNB', name: 'BNB', icon: 'B', color: '#f3ba2f', balance: 0, defaultPrice: 589.12 },
+      { symbol: 'USDT', name: 'Tether', icon: '₮', color: '#26a17b', balance: 0, defaultPrice: 1.00 },
+      { symbol: 'USDC', name: 'USD Coin', icon: '$', color: '#2775ca', balance: 0, defaultPrice: 1.00 },
     ];
 
     return staticTokens.map(t => {
       const coin = coins.find(c => c.symbol === t.symbol);
+      const dbWallet = dbWallets.find(w => w.symbol === t.symbol);
+      const balance = dbWallet ? dbWallet.balance : 0;
       return {
         symbol: t.symbol,
         name: t.name,
         icon: t.icon,
         color: t.color,
-        balance: t.balance,
+        balance,
         price: t.symbol === 'USDT' || t.symbol === 'USDC' ? 1.00 : (coin ? coin.price : t.defaultPrice)
       };
     });
-  }, [coins]);
+  }, [coins, dbWallets]);
 
   const [fromTokenSymbol, setFromTokenSymbol] = useState('ETH');
   const [toTokenSymbol, setToTokenSymbol] = useState('BTC');
@@ -89,8 +114,12 @@ export default function Swap() {
     return `1 ${fromToken.symbol} = ${ratio.toFixed(6)} ${toToken.symbol}`;
   }, [fromToken, toToken]);
 
-  const handleSwapNow = (e: React.FormEvent) => {
+  const handleSwapNow = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) {
+      toast.error('You must be logged in to swap tokens');
+      return;
+    }
     const amt = parseFloat(fromAmount);
     if (isNaN(amt) || amt <= 0) {
       toast.error('Please enter a valid amount');
@@ -100,9 +129,59 @@ export default function Swap() {
       toast.error(`Insufficient ${fromToken.symbol} balance`);
       return;
     }
-    toast.success(`Successfully swapped ${amt} ${fromToken.symbol} to ${calculatedToAmount} ${toToken.symbol}!`);
-    setFromAmount('');
+    
+    try {
+      setLoading(true);
+      const outAmt = parseFloat(calculatedToAmount.replace(/,/g, ''));
+      
+      const sourceWallet = dbWallets.find(w => w.symbol === fromTokenSymbol);
+      const destWallet = dbWallets.find(w => w.symbol === toTokenSymbol);
+      
+      const newSourceBalance = (sourceWallet?.balance ?? 0) - amt;
+      const newDestBalance = (destWallet?.balance ?? 0) + outAmt;
+      
+      // Update source wallet
+      await upsertWallet(
+        user.id,
+        fromTokenSymbol,
+        fromToken.name,
+        newSourceBalance,
+        sourceWallet?.avg_buy_price ?? fromToken.price
+      );
+      
+      // Update destination wallet
+      await upsertWallet(
+        user.id,
+        toTokenSymbol,
+        toToken.name,
+        newDestBalance,
+        toToken.price
+      );
+      
+      // Insert transaction record
+      const totalUsd = amt * fromToken.price;
+      await addTransaction(user.id, {
+        type: 'swap',
+        symbol: fromTokenSymbol,
+        amount: amt,
+        price_usd: fromToken.price,
+        total_usd: totalUsd,
+        fee_usd: totalUsd * 0.001,
+        status: 'completed',
+        note: `Swapped ${amt} ${fromTokenSymbol} to ${outAmt.toFixed(4)} ${toTokenSymbol}`
+      });
+      
+      toast.success(`Successfully swapped ${amt} ${fromTokenSymbol} to ${outAmt.toFixed(4)} ${toTokenSymbol}!`);
+      setFromAmount('');
+      await loadWallets();
+    } catch (err) {
+      console.error(err);
+      toast.error('Swap failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
+
 
   const selectToken = (symbol: string) => {
     if (selectorOpen === 'from') {

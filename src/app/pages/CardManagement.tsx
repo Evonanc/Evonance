@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import Navigation from '../components/Navigation';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip,
@@ -12,6 +12,16 @@ import {
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { fadeUp, scaleIn, slideInLeft, staggerContainer, staggerFast } from '../lib/animations';
+import { useAuth } from '../hooks/useAuth';
+import { supabase } from '../lib/supabase';
+import { 
+  getCards, 
+  updateCardStatus, 
+  topUpCard, 
+  getCardTransactions, 
+  Card, 
+  CardTransaction 
+} from '../lib/db';
 
 interface CardData {
   id: string;
@@ -28,42 +38,79 @@ interface CardData {
 
 export default function CardManagement() {
   const shouldReduceMotion = useReducedMotion();
-  const [cards, setCards] = useState<CardData[]>([
-    { 
-      id: '1', 
-      name: 'Primary Card', 
-      last4: '4589', 
-      cardNumber: '4589 1234 5678 4589', 
-      cvv: '321', 
-      balance: '$1,250.45', 
-      limit: '$5,000', 
-      status: 'active', 
-      expiry: '12/28', 
-      cardholder: 'JOHN DOE' 
-    },
-    { 
-      id: '2', 
-      name: 'Shopping Card', 
-      last4: '7823', 
-      cardNumber: '7823 8765 4321 7823', 
-      cvv: '987', 
-      balance: '$450.00', 
-      limit: '$2,000', 
-      status: 'frozen', 
-      expiry: '09/27', 
-      cardholder: 'JOHN DOE' 
-    },
-  ]);
+  const { user } = useAuth();
+  
+  const [dbCards, setDbCards] = useState<Card[]>([]);
+  const [selectedCardId, setSelectedCardId] = useState<string>('');
+  const [dbTransactions, setDbTransactions] = useState<CardTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const [selectedCardId, setSelectedCardId] = useState('1');
   const [showCardNumber, setShowCardNumber] = useState(false);
   const [showCvv, setShowCvv] = useState(false);
-
-  const selectedCard = cards.find(c => c.id === selectedCardId) || cards[0];
 
   // 3D tilt tracking states
   const cardVisualRef = useRef<HTMLDivElement>(null);
   const [tiltStyle, setTiltStyle] = useState({ rotateX: 0, rotateY: 0 });
+
+  const loadData = useCallback(async () => {
+    if (!user) return;
+    try {
+      setLoading(true);
+      const fetchedCards = await getCards(user.id);
+      setDbCards(fetchedCards);
+      
+      let selId = selectedCardId;
+      if (!selId && fetchedCards.length > 0) {
+        selId = fetchedCards[0].id;
+        setSelectedCardId(selId);
+      }
+
+      if (selId) {
+        const fetchedTx = await getCardTransactions(user.id, selId);
+        setDbTransactions(fetchedTx);
+      } else {
+        setDbTransactions([]);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }, [user, selectedCardId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const mappedCards = useMemo(() => {
+    return dbCards.map(c => ({
+      id: c.id,
+      name: c.name,
+      last4: c.last4,
+      cardNumber: (c as any).card_number || `4589 1234 5678 ${c.last4}`,
+      cvv: (c as any).cvv || '321',
+      balance: `$${c.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      limit: `$${c.spending_limit.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+      status: c.status === 'frozen' ? ('frozen' as const) : ('active' as const),
+      expiry: c.expiry,
+      cardholder: 'JOHN DOE'
+    }));
+  }, [dbCards]);
+
+  const selectedCard = useMemo(() => {
+    return mappedCards.find(c => c.id === selectedCardId) || mappedCards[0] || {
+      id: '',
+      name: 'No Cards',
+      last4: '0000',
+      cardNumber: '•••• •••• •••• 0000',
+      cvv: '000',
+      balance: '$0.00',
+      limit: '$0',
+      status: 'active' as const,
+      expiry: '00/00',
+      cardholder: 'JOHN DOE'
+    };
+  }, [mappedCards, selectedCardId]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (shouldReduceMotion) return;
@@ -82,55 +129,126 @@ export default function CardManagement() {
     setTiltStyle({ rotateX: 0, rotateY: 0 });
   };
 
-  const handleToggleFreeze = () => {
-    setCards(prev => prev.map(c => {
-      if (c.id === selectedCard.id) {
-        const nextStatus = c.status === 'active' ? 'frozen' : 'active';
-        toast.success(`Card successfully ${nextStatus === 'active' ? 'unfrozen' : 'frozen'}!`);
-        return { ...c, status: nextStatus };
-      }
-      return c;
-    }));
+  const handleToggleFreeze = async () => {
+    if (!selectedCard.id) return;
+    const nextStatus = selectedCard.status === 'active' ? 'frozen' : 'active';
+    try {
+      setLoading(true);
+      await updateCardStatus(selectedCard.id, nextStatus);
+      toast.success(`Card successfully ${nextStatus === 'active' ? 'unfrozen' : 'frozen'}!`);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to update card status');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCopyNumber = () => {
+    if (!selectedCard.id) return;
     navigator.clipboard.writeText(selectedCard.cardNumber);
     toast.success('Card number copied to clipboard!');
   };
 
-  const handleCreateCard = () => {
-    toast.success('Simulation: New virtual card created successfully!');
+  const handleCreateCard = async () => {
+    if (!user) return;
+    const name = window.prompt('Enter a name for your new card:', 'Shopping Card');
+    if (!name) return;
+    
+    try {
+      setLoading(true);
+      const last4 = Math.floor(1000 + Math.random() * 9000).toString();
+      const card_number = `${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)} ${last4}`;
+      const cvv = Math.floor(100 + Math.random() * 900).toString();
+      const expiry = '12/30';
+      
+      const { error } = await supabase.from('cards').insert({
+        user_id: user.id,
+        name,
+        last4,
+        card_number,
+        cvv,
+        expiry,
+        balance: 0,
+        spending_limit: 5000,
+        status: 'active'
+      });
+      
+      if (error) throw error;
+      toast.success('New card created successfully!');
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to create new card');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleFundCard = () => {
-    toast.success('Simulation: Card successfully funded!');
+  const handleFundCard = async () => {
+    if (!selectedCard.id || !user) return;
+    const amountStr = window.prompt(`Enter top-up amount for ${selectedCard.name}:`, '100');
+    if (!amountStr) return;
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      toast.error('Invalid top-up amount');
+      return;
+    }
+    
+    try {
+      setLoading(true);
+      await topUpCard(selectedCard.id, user.id, amount);
+      toast.success(`Successfully topped up $${amount.toFixed(2)}!`);
+      await loadData();
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to fund card');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Spending Stats data
-  const spendData = [
-    { name: 'Jan', value: 890 },
-    { name: 'Feb', value: 1240 },
-    { name: 'Mar', value: 980 },
-    { name: 'Apr', value: 1450 },
-    { name: 'May', value: 1200 },
-    { name: 'Jun', value: 1700 },
-  ];
+  const spendData = useMemo(() => {
+    const baseValue = parseFloat(selectedCard.balance.replace('$', '').replace(',', '')) || 0;
+    return [
+      { name: 'Jan', value: Math.max(100, baseValue * 0.4) },
+      { name: 'Feb', value: Math.max(150, baseValue * 0.6) },
+      { name: 'Mar', value: Math.max(120, baseValue * 0.5) },
+      { name: 'Apr', value: Math.max(200, baseValue * 0.8) },
+      { name: 'May', value: Math.max(180, baseValue * 0.7) },
+      { name: 'Jun', value: Math.max(250, baseValue) },
+    ];
+  }, [selectedCard.balance]);
 
-  const pieData = [
-    { name: 'Shopping', value: 450, color: '#0066ff' },
-    { name: 'Food', value: 320, color: '#10b981' },
-    { name: 'Entertainment', value: 180, color: '#f59e0b' },
-    { name: 'Travel', value: 250, color: '#8b5cf6' },
-    { name: 'Other', value: 100, color: '#64748b' },
-  ];
+  const pieData = useMemo(() => {
+    const totalSpent = dbTransactions.reduce((acc, curr) => acc + (curr.category !== 'deposit' ? curr.amount : 0), 0);
+    if (totalSpent === 0) {
+      return [
+        { name: 'No spend', value: 1, color: '#64748b' }
+      ];
+    }
+    const categories: Record<string, number> = {};
+    dbTransactions.forEach(t => {
+      if (t.category !== 'deposit') {
+        categories[t.category] = (categories[t.category] || 0) + t.amount;
+      }
+    });
+    const colors: Record<string, string> = {
+      shopping: '#0066ff',
+      food: '#10b981',
+      entertainment: '#f59e0b',
+      travel: '#8b5cf6',
+      other: '#64748b'
+    };
+    return Object.entries(categories).map(([name, val]) => ({
+      name: name.charAt(0).toUpperCase() + name.slice(1),
+      value: val,
+      color: colors[name.toLowerCase()] || '#64748b'
+    }));
+  }, [dbTransactions]);
 
-  const transactions = [
-    { merchant: 'Amazon', amount: '-$89.99', category: 'shopping', time: '2h ago', status: 'completed', icon: ShoppingCart },
-    { merchant: 'Uber Eats', amount: '-$32.50', category: 'food', time: '5h ago', status: 'completed', icon: Utensils },
-    { merchant: 'Netflix', amount: '-$15.99', category: 'entertainment', time: '1d ago', status: 'completed', icon: Zap },
-    { merchant: 'Spotify', amount: '-$9.99', category: 'entertainment', time: '2d ago', status: 'completed', icon: Zap },
-    { merchant: 'Wallet Top-up', amount: '+$500.00', category: 'deposit', time: '3d ago', status: 'completed', icon: ArrowUpRight },
-  ];
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -147,7 +265,7 @@ export default function CardManagement() {
 
           {/* Selector Horizontal Row */}
           <div className="flex bg-secondary p-1 rounded-xl gap-1 relative">
-            {cards.map((card) => (
+            {mappedCards.map((card) => (
               <button
                 key={card.id}
                 onClick={() => {
@@ -454,38 +572,74 @@ export default function CardManagement() {
                 variants={staggerFast}
                 className="divide-y divide-border"
               >
-                {transactions.map((tx, i) => (
-                  <motion.div 
-                    key={i} 
-                    variants={shouldReduceMotion ? {} : fadeUp}
-                    whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
-                    transition={{ duration: 0.15 }}
-                    className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between px-1 rounded-lg transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        tx.category === 'deposit'
-                          ? 'bg-success/10 text-success'
-                          : 'bg-secondary text-muted-foreground'
-                      }`}>
-                        <tx.icon className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-sm text-foreground">{tx.merchant}</p>
-                        <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tx.category} • {tx.time}</p>
-                      </div>
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="py-2.5">
+                      <div className="skeleton h-12 rounded-lg w-full" />
                     </div>
-                    <div className="text-right">
-                      <p className={`font-mono font-bold text-sm ${tx.category === 'deposit' ? 'text-success' : 'text-foreground'}`}>
-                        {tx.amount}
-                      </p>
-                      <span className="text-[9px] font-bold text-success flex items-center justify-end gap-0.5">
-                        <CheckCircle2 className="w-2.5 h-2.5" />
-                        <span>Completed</span>
-                      </span>
-                    </div>
-                  </motion.div>
-                ))}
+                  ))
+                ) : dbTransactions.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">No transactions found for this card.</p>
+                ) : (
+                  dbTransactions.map((tx, i) => {
+                    const isDeposit = tx.category === 'deposit';
+                    const amountFormatted = `${isDeposit ? '+' : '-'}$${tx.amount.toFixed(2)}`;
+                    
+                    const getCategoryIcon = (category: string) => {
+                      switch (category.toLowerCase()) {
+                        case 'shopping': return ShoppingCart;
+                        case 'food': return Utensils;
+                        case 'entertainment': return Zap;
+                        case 'deposit': return ArrowUpRight;
+                        default: return ShoppingCart;
+                      }
+                    };
+                    const Icon = getCategoryIcon(tx.category);
+
+                    const diff = Date.now() - new Date(tx.created_at).getTime();
+                    let timeStr = 'Just now';
+                    if (diff >= 86400000) {
+                      timeStr = Math.floor(diff / 86400000) + 'd ago';
+                    } else if (diff >= 3600000) {
+                      timeStr = Math.floor(diff / 3600000) + 'h ago';
+                    } else if (diff >= 60000) {
+                      timeStr = Math.max(1, Math.floor(diff / 60000)) + 'm ago';
+                    }
+
+                    return (
+                      <motion.div 
+                        key={tx.id || i} 
+                        variants={shouldReduceMotion ? {} : fadeUp}
+                        whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
+                        transition={{ duration: 0.15 }}
+                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between px-1 rounded-lg transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                            isDeposit
+                              ? 'bg-success/10 text-success'
+                              : 'bg-secondary text-muted-foreground'
+                          }`}>
+                            <Icon className="w-4 h-4" />
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-foreground">{tx.merchant}</p>
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider">{tx.category} • {timeStr}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className={`font-mono font-bold text-sm ${isDeposit ? 'text-success' : 'text-foreground'}`}>
+                            {amountFormatted}
+                          </p>
+                          <span className="text-[9px] font-bold text-success flex items-center justify-end gap-0.5">
+                            <CheckCircle2 className="w-2.5 h-2.5" />
+                            <span>{tx.status || 'Completed'}</span>
+                          </span>
+                        </div>
+                      </motion.div>
+                    );
+                  })
+                )}
               </motion.div>
             </motion.div>
 

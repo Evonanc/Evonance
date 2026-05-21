@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Navigation from '../components/Navigation';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip 
@@ -6,13 +6,17 @@ import {
 import { 
   ArrowUpRight, ArrowDownRight, 
   TrendingUp, Wallet, ArrowLeftRight, CreditCard, 
-  ArrowUp, ArrowDown, BookOpen, Eye, EyeOff, CheckCircle2, ChevronRight
+  ArrowUp, ArrowDown, BookOpen, Eye, EyeOff, CheckCircle2, ChevronRight,
+  ArrowDownLeft
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { fadeUp, scaleIn, slideInRight, staggerContainer, staggerFast } from '../lib/animations';
 import { useCountUp } from '../hooks/useCountUp';
 import { useCryptoData } from '../hooks/useCryptoData';
-import { formatPrice } from '../lib/crypto';
+import { formatPrice, CoinData } from '../lib/crypto';
+import { usePortfolio } from '../hooks/usePortfolio';
+import { useAuth } from '../hooks/useAuth';
+import { getWatchlist } from '../lib/db';
 
 function CountUpText({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
   const { ref, value } = useCountUp(target, 1500, prefix, suffix, decimals);
@@ -23,66 +27,44 @@ export default function Dashboard() {
   const shouldReduceMotion = useReducedMotion();
   const [hideBalance, setHideBalance] = useState(false);
 
+  const { user } = useAuth();
+
   // Live Crypto Data Hook (WebSocket enabled)
-  const { coins, loading, wsConnected } = useCryptoData();
+  const { coins, loading: cryptoLoading } = useCryptoData();
 
-  // Watchlist: replace hardcoded prices and changes with real live values for AVAX, MATIC, DOT, LINK
-  const watchlist = useMemo(() => {
-    const watchlistSymbols = ['AVAX', 'MATIC', 'DOT', 'LINK'];
-    const names: Record<string, string> = {
-      AVAX: 'Avalanche',
-      MATIC: 'Polygon',
-      DOT: 'Polkadot',
-      LINK: 'Chainlink'
-    };
-    return watchlistSymbols.map(sym => {
-      const coin = coins.find(c => c.symbol === sym);
-      const price = coin?.price ?? 0;
-      const change24h = coin?.change24h ?? 0;
-      const isUp = change24h >= 0;
-      return {
-        symbol: sym,
-        name: names[sym] || sym,
-        price,
-        change: `${isUp ? '+' : ''}${change24h.toFixed(2)}%`,
-        isUp
-      };
-    });
-  }, [coins]);
+  // Real Supabase Portfolio Hook
+  const {
+    assets,
+    transactions: dbTransactions,
+    totalValue,
+    totalPnl,
+    totalPnlPercent,
+    loading: portfolioLoading
+  } = usePortfolio(coins);
 
-  const chartData = [
-    { name: 'Jan', value: 98000 },
-    { name: 'Feb', value: 115000 },
-    { name: 'Mar', value: 108000 },
-    { name: 'Apr', value: 128000 },
-    { name: 'May', value: 122000 },
-    { name: 'Jun', value: 142080 },
-  ];
+  const loading = cryptoLoading || portfolioLoading;
 
-  // holdings: replace the hardcoded change24h values with real values from Bybit for BTC, ETH, SOL, BNB
-  const holdings = useMemo(() => {
-    const staticHoldings = [
-      { name: 'Bitcoin', symbol: 'BTC', amount: '1.245 BTC', value: '$83,707.02', allocation: '58.9%', defaultChange: 2.34 },
-      { name: 'Ethereum', symbol: 'ETH', amount: '8.450 ETH', value: '$29,209.79', allocation: '20.6%', defaultChange: -1.23 },
-      { name: 'Solana', symbol: 'SOL', amount: '124.3 SOL', value: '$17,692.86', allocation: '12.5%', defaultChange: 5.67 },
-      { name: 'Tether', symbol: 'USDT', amount: '11,470 USDT', value: '$11,470.33', allocation: '8.0%', defaultChange: 0.01 },
-    ];
+  // Watchlist — load symbols then match to live prices
+  const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
+  useEffect(() => {
+    if (!user) return;
+    getWatchlist(user.id).then(setWatchlistSymbols).catch(console.error);
+  }, [user]);
 
-    return staticHoldings.map(h => {
-      const coin = coins.find(c => c.symbol === h.symbol);
-      return {
-        ...h,
-        change24h: coin ? coin.change24h : h.defaultChange
-      };
-    });
-  }, [coins]);
+  const watchlistCoins = useMemo(() => {
+    return watchlistSymbols
+      .map(sym => coins.find(c => c.symbol === sym))
+      .filter((c): c is CoinData => !!c);
+  }, [watchlistSymbols, coins]);
 
-  const transactions = [
-    { type: 'Swap', desc: 'Sold ETH for USDT', amount: '-1.50 ETH', value: '+$5,185.17', time: '2 hours ago', status: 'completed' },
-    { type: 'Received', desc: 'Deposit from external wallet', amount: '+0.045 BTC', value: '+$3,025.56', time: '1 day ago', status: 'completed' },
-    { type: 'Sent', desc: 'Transfer to John Doe', amount: '-50.00 SOL', value: '-$7,117.00', time: '3 days ago', status: 'completed' },
-    { type: 'Card Funding', desc: 'Funded Primary Card', amount: '-500.00 USDT', value: '-$500.00', time: '4 days ago', status: 'completed' },
-  ];
+  const chartData = useMemo(() => [
+    { name: 'Jan', value: totalValue * 0.7 },
+    { name: 'Feb', value: totalValue * 0.8 },
+    { name: 'Mar', value: totalValue * 0.75 },
+    { name: 'Apr', value: totalValue * 0.9 },
+    { name: 'May', value: totalValue * 0.85 },
+    { name: 'Jun', value: totalValue },
+  ], [totalValue]);
 
   const newsList = [
     { title: 'Bitcoin surges past key resistance level', source: 'Bloomberg', time: '1 hour ago' },
@@ -98,6 +80,7 @@ export default function Dashboard() {
     { label: 'Swap', icon: ArrowLeftRight, href: '/swap', color: 'text-pink-500 bg-pink-500/10' },
     { label: 'Trade', icon: TrendingUp, href: '/trade', color: 'text-cyan-500 bg-cyan-500/10' },
   ];
+
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -153,23 +136,24 @@ export default function Dashboard() {
                   {hideBalance ? (
                     '••••••••'
                   ) : (
-                    <CountUpText target={142080.00} decimals={2} prefix="$" />
+                    <CountUpText target={totalValue} decimals={2} prefix="$" />
                   )}
                 </span>
-                <span className="text-success text-sm font-bold bg-success/10 px-2.5 py-1 rounded-lg flex items-center gap-0.5">
-                  <ArrowUpRight className="w-3.5 h-3.5" />
+                <span className={`text-sm font-bold px-2.5 py-1 rounded-lg flex items-center gap-0.5 ${totalPnl >= 0 ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'}`}>
+                  {totalPnl >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
                   <span>
-                    <CountUpText target={9.62} decimals={2} suffix="%" />
+                    <CountUpText target={Math.abs(totalPnlPercent)} decimals={2} suffix="%" />
                   </span>
                 </span>
               </div>
               
               <div className="text-xs text-muted-foreground flex gap-1 font-mono">
                 <span>Daily P&L:</span>
-                <span className="text-success font-semibold">
-                  {hideBalance ? '••••' : <CountUpText target={12450.00} decimals={2} prefix="+$" />}
+                <span className={`${totalPnl >= 0 ? 'text-success' : 'text-destructive'} font-semibold`}>
+                  {hideBalance ? '••••' : `${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toLocaleString('en-US', { maximumFractionDigits: 2 })} (${totalPnlPercent.toFixed(2)}%)`}
                 </span>
               </div>
+
             </div>
 
             {/* Premium pulsating Recharts AreaChart */}
@@ -279,38 +263,54 @@ export default function Dashboard() {
                 variants={staggerFast}
                 className="divide-y divide-border"
               >
-                {holdings.map((hold) => {
-                  const isUp = hold.change24h >= 0;
-                  const formattedChange = `${isUp ? '+' : ''}${hold.change24h.toFixed(2)}%`;
-                  return (
-                    <motion.div
-                      key={hold.symbol}
-                      variants={shouldReduceMotion ? {} : fadeUp}
-                      whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
-                      transition={{ duration: 0.15 }}
-                      className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                          {hold.symbol.slice(0, 2)}
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="py-2.5">
+                      <div className="skeleton h-12 rounded-lg w-full" />
+                    </div>
+                  ))
+                ) : (
+                  assets.map((asset) => {
+                    const isUp = asset.pnlPercent >= 0;
+                    const formattedChange = `${isUp ? '+' : ''}${asset.pnlPercent.toFixed(2)}%`;
+                    const allocation = totalValue > 0 ? ((asset.currentValue / totalValue) * 100).toFixed(1) + '%' : '0.0%';
+                    return (
+                      <motion.div
+                        key={asset.symbol}
+                        variants={shouldReduceMotion ? {} : fadeUp}
+                        whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
+                        transition={{ duration: 0.15 }}
+                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div 
+                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0"
+                            style={{ backgroundColor: `${asset.color}15`, color: asset.color }}
+                          >
+                            {asset.symbol.slice(0, 2)}
+                          </div>
+                          <div>
+                            <p className="font-bold text-sm text-foreground">{asset.name}</p>
+                            <p className="text-[10px] text-muted-foreground uppercase font-semibold">
+                              {hideBalance ? '••••' : `${asset.balance.toFixed(4)} ${asset.symbol}`}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-sm text-foreground">{hold.name}</p>
-                          <p className="text-[10px] text-muted-foreground uppercase font-semibold">{hold.amount}</p>
+                        <div className="text-right">
+                          <p className="font-bold text-sm text-foreground font-mono">
+                            {hideBalance ? '••••' : `$${asset.currentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+                          </p>
+                          <div className="flex items-center justify-end gap-1.5 mt-0.5">
+                            <span className={`text-[9px] font-bold ${isUp ? 'text-success' : 'text-destructive'}`}>
+                              {formattedChange}
+                            </span>
+                            <span className="text-[10px] bg-secondary text-primary font-bold px-2 py-0.5 rounded-full">{allocation}</span>
+                          </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-sm text-foreground font-mono">{hold.value}</p>
-                        <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                          <span className={`text-[9px] font-bold ${isUp ? 'text-success' : 'text-destructive'}`}>
-                            {formattedChange}
-                          </span>
-                          <span className="text-[10px] bg-secondary text-primary font-bold px-2 py-0.5 rounded-full">{hold.allocation}</span>
-                        </div>
-                      </div>
-                    </motion.div>
-                  );
-                })}
+                      </motion.div>
+                    );
+                  })
+                )}
               </motion.div>
             </div>
             
@@ -333,30 +333,62 @@ export default function Dashboard() {
               variants={staggerFast}
               className="space-y-4"
             >
-              {transactions.map((tx, i) => (
-                <motion.div 
-                  key={i}
-                  variants={shouldReduceMotion ? {} : fadeUp}
-                  className="flex items-center justify-between"
-                >
-                  <div className="flex gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-secondary flex items-center justify-center shrink-0">
-                      {tx.type === 'Swap' && <ArrowLeftRight className="w-4 h-4 text-pink-500" />}
-                      {tx.type === 'Received' && <ArrowDown className="w-4 h-4 text-success" />}
-                      {tx.type === 'Sent' && <ArrowUp className="w-4 h-4 text-primary" />}
-                      {tx.type === 'Card Funding' && <CreditCard className="w-4 h-4 text-indigo-500" />}
-                    </div>
-                    <div>
-                      <p className="font-bold text-xs text-foreground leading-none mb-1">{tx.desc}</p>
-                      <p className="text-[10px] text-muted-foreground">{tx.time}</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-bold text-xs text-foreground font-mono">{tx.amount}</p>
-                    <p className="text-[10px] text-muted-foreground font-mono">{tx.value}</p>
-                  </div>
-                </motion.div>
-              ))}
+              {loading ? (
+                Array.from({ length: 4 }).map((_, idx) => (
+                  <div key={idx} className="skeleton h-12 rounded-lg w-full" />
+                ))
+              ) : (
+                dbTransactions.map((tx, i) => {
+                  const isAdd = ['buy', 'deposit', 'receive'].includes(tx.type);
+                  const formattedAmount = `${isAdd ? '+' : '-'}${tx.amount.toFixed(4)} ${tx.symbol}`;
+                  const formattedValue = `${isAdd ? '+' : '-'}$${tx.total_usd.toFixed(2)}`;
+                  const desc = tx.note || `${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)} ${tx.symbol}`;
+                  
+                  const diff = Date.now() - new Date(tx.created_at).getTime();
+                  let timeStr = 'Just now';
+                  if (diff >= 86400000) {
+                    timeStr = Math.floor(diff / 86400000) + 'd ago';
+                  } else if (diff >= 3600000) {
+                    timeStr = Math.floor(diff / 3600000) + 'h ago';
+                  } else if (diff >= 60000) {
+                    timeStr = Math.max(1, Math.floor(diff / 60000)) + 'm ago';
+                  }
+
+                  return (
+                    <motion.div 
+                      key={tx.id || i}
+                      variants={shouldReduceMotion ? {} : fadeUp}
+                      className="flex items-center justify-between"
+                    >
+                      <div className="flex gap-3">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          isAdd 
+                            ? 'bg-success/10 text-success' 
+                            : tx.type === 'swap' 
+                              ? 'bg-primary/10 text-primary' 
+                              : 'bg-destructive/10 text-destructive'
+                        }`}>
+                          {tx.type === 'swap' ? (
+                            <ArrowLeftRight className="w-4 h-4 text-primary" />
+                          ) : isAdd ? (
+                            <ArrowDownLeft className="w-4 h-4 text-success" />
+                          ) : (
+                            <ArrowUpRight className="w-4 h-4 text-destructive" />
+                          )}
+                        </div>
+                        <div>
+                          <p className="font-bold text-xs text-foreground leading-none mb-1">{desc}</p>
+                          <p className="text-[10px] text-muted-foreground">{timeStr}</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold text-xs text-foreground font-mono">{formattedAmount}</p>
+                        <p className="text-[10px] text-muted-foreground font-mono">{formattedValue}</p>
+                      </div>
+                    </motion.div>
+                  );
+                })
+              )}
             </motion.div>
           </motion.div>
 
@@ -378,58 +410,53 @@ export default function Dashboard() {
               >
                 {loading ? (
                   Array.from({ length: 4 }).map((_, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-3 border border-border/50 rounded-xl bg-background animate-pulse">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-secondary shrink-0" />
-                        <div className="space-y-1">
-                          <div className="h-3 w-10 bg-secondary rounded" />
-                          <div className="h-2.5 w-16 bg-secondary rounded" />
-                        </div>
-                      </div>
-                      <div className="space-y-1 text-right flex flex-col items-end">
-                        <div className="h-3 w-16 bg-secondary rounded" />
-                        <div className="h-2.5 w-8 bg-secondary rounded" />
-                      </div>
-                    </div>
+                    <div key={idx} className="skeleton h-12 rounded-lg w-full" />
                   ))
                 ) : (
-                  watchlist.map((item) => (
-                    <motion.div
-                      key={item.symbol}
-                      variants={shouldReduceMotion ? {} : fadeUp}
-                      className="flex items-center justify-between p-3 border border-border/50 rounded-xl bg-background"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-[10px] shrink-0">
-                          {item.symbol}
+                  watchlistCoins.map((coin) => {
+                    const isUp = coin.change24h >= 0;
+                    const formattedChange = `${isUp ? '+' : ''}${coin.change24h.toFixed(2)}%`;
+                    return (
+                      <motion.div
+                        key={coin.symbol}
+                        variants={shouldReduceMotion ? {} : fadeUp}
+                        className="flex items-center justify-between p-3 border border-border/50 rounded-xl bg-background"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <div 
+                            className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0"
+                            style={{ backgroundColor: `${coin.color}15`, color: coin.color }}
+                          >
+                            {coin.symbol}
+                          </div>
+                          <div>
+                            <p className="font-bold text-xs text-foreground">{coin.symbol}</p>
+                            <p className="text-[9px] text-muted-foreground uppercase font-semibold">{coin.name}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-xs text-foreground">{item.symbol}</p>
-                          <p className="text-[9px] text-muted-foreground uppercase font-semibold">{item.name}</p>
+                        <div className="text-right">
+                          <p className="font-bold text-xs text-foreground font-mono">
+                            <AnimatePresence mode="popLayout" initial={false}>
+                              <motion.span
+                                key={coin.price}
+                                initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                exit={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
+                                transition={{ duration: 0.2 }}
+                                className="inline-block"
+                              >
+                                ${formatPrice(coin.price)}
+                              </motion.span>
+                            </AnimatePresence>
+                          </p>
+                          <span className={`text-[9px] font-bold flex items-center justify-end gap-0.5 ${isUp ? 'text-success' : 'text-destructive'}`}>
+                            {isUp ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
+                            <span>{formattedChange}</span>
+                          </span>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-xs text-foreground font-mono">
-                          <AnimatePresence mode="popLayout" initial={false}>
-                            <motion.span
-                              key={item.price}
-                              initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
-                              animate={{ opacity: 1, scale: 1 }}
-                              exit={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
-                              transition={{ duration: 0.2 }}
-                              className="inline-block"
-                            >
-                              ${formatPrice(item.price)}
-                            </motion.span>
-                          </AnimatePresence>
-                        </p>
-                        <span className={`text-[9px] font-bold flex items-center justify-end gap-0.5 ${item.isUp ? 'text-success' : 'text-destructive'}`}>
-                          {item.isUp ? <ArrowUpRight className="w-2.5 h-2.5" /> : <ArrowDownRight className="w-2.5 h-2.5" />}
-                          <span>{item.change}</span>
-                        </span>
-                      </div>
-                    </motion.div>
-                  ))
+                      </motion.div>
+                    );
+                  })
                 )}
               </motion.div>
             </motion.div>
