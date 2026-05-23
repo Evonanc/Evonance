@@ -11,6 +11,17 @@ import Trade from './pages/Trade';
 import CardManagement from './pages/CardManagement';
 import ProtectedRoute from './components/ProtectedRoute';
 import AuthCallback from './pages/AuthCallback';
+import Settings from './pages/Settings'; // Re-trigger TypeScript server cache validation
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
+import Notifications from './pages/Notifications';
+import KYCOnboarding from './pages/KYCOnboarding';
+import PrivacyPolicy from './pages/legal/PrivacyPolicy';
+import TermsOfService from './pages/legal/TermsOfService';
+import CookiePolicy from './pages/legal/CookiePolicy';
+import Compliance from './pages/legal/Compliance';
+import HelpCenter from './pages/HelpCenter';
+import HelpArticle from './pages/HelpArticle';
 
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
@@ -35,6 +46,8 @@ function AnimatedRoutes() {
         <Route path="/" element={<PageTransitionWrapper><Homepage /></PageTransitionWrapper>} />
         <Route path="/login" element={<PageTransitionWrapper><Login /></PageTransitionWrapper>} />
         <Route path="/signup" element={<PageTransitionWrapper><Signup /></PageTransitionWrapper>} />
+        <Route path="/forgot-password" element={<PageTransitionWrapper><ForgotPassword /></PageTransitionWrapper>} />
+        <Route path="/reset-password" element={<PageTransitionWrapper><ResetPassword /></PageTransitionWrapper>} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         
         <Route path="/dashboard" element={
@@ -68,6 +81,37 @@ function AnimatedRoutes() {
             </PageTransitionWrapper>
           </ProtectedRoute>
         } />
+        
+        <Route path="/settings" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Settings />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/notifications" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Notifications />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/kyc" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <KYCOnboarding />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
+        <Route path="/privacy"    element={<PageTransitionWrapper><PrivacyPolicy /></PageTransitionWrapper>} />
+        <Route path="/terms"      element={<PageTransitionWrapper><TermsOfService /></PageTransitionWrapper>} />
+        <Route path="/cookies"    element={<PageTransitionWrapper><CookiePolicy /></PageTransitionWrapper>} />
+        <Route path="/compliance" element={<PageTransitionWrapper><Compliance /></PageTransitionWrapper>} />
+        <Route path="/help"             element={<PageTransitionWrapper><HelpCenter /></PageTransitionWrapper>} />
+        <Route path="/help/:articleId"  element={<PageTransitionWrapper><HelpArticle /></PageTransitionWrapper>} />
       </Routes>
     </AnimatePresence>
   );

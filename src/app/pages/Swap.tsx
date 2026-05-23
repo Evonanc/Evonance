@@ -8,7 +8,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInLeft, slideInRight, staggerContainer } from '../lib/animations';
 import { useCryptoData } from '../hooks/useCryptoData';
 import { useAuth } from '../hooks/useAuth';
-import { getWallets, upsertWallet, addTransaction, Wallet } from '../lib/db';
+import { getWallets, upsertWallet, addTransaction, Wallet, createNotification } from '../lib/db';
 
 interface Token {
   symbol: string;
@@ -25,14 +25,16 @@ export default function Swap() {
   const { user } = useAuth();
   
   const [dbWallets, setDbWallets] = useState<Wallet[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
   const [loading, setLoading] = useState(true);
 
   const loadWallets = useCallback(async () => {
     if (!user) return;
     try {
       setLoading(true);
-      const wallets = await getWallets(user.id);
-      setDbWallets(wallets);
+      const fetchedWallets = await getWallets(user.id);
+      setDbWallets(fetchedWallets);
+      setWallets(fetchedWallets);
     } catch (err) {
       console.error(err);
     } finally {
@@ -43,6 +45,14 @@ export default function Swap() {
   useEffect(() => {
     loadWallets();
   }, [loadWallets]);
+
+  useEffect(() => {
+    if (!user) return;
+    getWallets(user.id).then(setWallets);
+  }, [user]);
+
+  const getBalance = (symbol: string) =>
+    wallets.find(w => w.symbol === symbol)?.balance ?? 0;
 
   const tokens: Token[] = useMemo(() => {
     const staticTokens = [
@@ -125,7 +135,7 @@ export default function Swap() {
       toast.error('Please enter a valid amount');
       return;
     }
-    if (amt > fromToken.balance) {
+    if (parseFloat(fromAmount) > getBalance(fromToken.symbol)) {
       toast.error(`Insufficient ${fromToken.symbol} balance`);
       return;
     }
@@ -170,6 +180,12 @@ export default function Swap() {
         status: 'completed',
         note: `Swapped ${amt} ${fromTokenSymbol} to ${outAmt.toFixed(4)} ${toTokenSymbol}`
       });
+      createNotification(
+        user.id, 'swap',
+        `Swap completed`,
+        `Swapped ${amt} ${fromToken.symbol} → ${outAmt.toFixed(6)} ${toToken.symbol}`,
+        '/swap'
+      ).catch(console.error);
       
       toast.success(`Successfully swapped ${amt} ${fromTokenSymbol} to ${outAmt.toFixed(4)} ${toTokenSymbol}!`);
       setFromAmount('');
@@ -273,7 +289,7 @@ export default function Swap() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted-foreground">From</span>
                   <span className="text-xs text-muted-foreground font-semibold">
-                    Balance: {fromToken.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} {fromToken.symbol}
+                    Balance: {getBalance(fromToken.symbol).toFixed(4)} {fromToken.symbol}
                   </span>
                 </div>
 
@@ -306,7 +322,7 @@ export default function Swap() {
                         className="w-full text-right bg-transparent text-2xl font-bold focus:outline-none placeholder-muted-foreground font-mono"
                       />
                       <button 
-                        onClick={() => setFromAmount(fromToken.balance.toString())}
+                        onClick={() => setFromAmount(getBalance(fromToken.symbol).toString())}
                         className="px-2.5 py-1 text-xs font-bold bg-primary/10 hover:bg-primary/20 text-primary rounded-lg transition-all cursor-pointer"
                       >
                         MAX
@@ -351,7 +367,7 @@ export default function Swap() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-muted-foreground">To</span>
                   <span className="text-xs text-muted-foreground font-semibold">
-                    Balance: {toToken.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} {toToken.symbol}
+                    Balance: {getBalance(toToken.symbol).toFixed(4)} {toToken.symbol}
                   </span>
                 </div>
 

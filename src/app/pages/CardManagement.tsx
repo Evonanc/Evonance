@@ -20,7 +20,8 @@ import {
   topUpCard, 
   getCardTransactions, 
   Card, 
-  CardTransaction 
+  CardTransaction,
+  createNotification 
 } from '../lib/db';
 
 interface CardData {
@@ -130,11 +131,17 @@ export default function CardManagement() {
   };
 
   const handleToggleFreeze = async () => {
-    if (!selectedCard.id) return;
+    if (!selectedCard.id || !user) return;
     const nextStatus = selectedCard.status === 'active' ? 'frozen' : 'active';
     try {
       setLoading(true);
       await updateCardStatus(selectedCard.id, nextStatus);
+      createNotification(
+        user.id, 'card',
+        `Card ${nextStatus === 'frozen' ? 'frozen' : 'unfrozen'}`,
+        `Your ${selectedCard.name} ending in ${selectedCard.last4} has been ${nextStatus}.`,
+        '/cards'
+      ).catch(console.error);
       toast.success(`Card successfully ${nextStatus === 'active' ? 'unfrozen' : 'frozen'}!`);
       await loadData();
     } catch (err) {
@@ -199,6 +206,12 @@ export default function CardManagement() {
     try {
       setLoading(true);
       await topUpCard(selectedCard.id, user.id, amount);
+      createNotification(
+        user.id, 'card',
+        `Card top-up successful`,
+        `$${amount.toFixed(2)} added to your ${selectedCard.name} ending in ${selectedCard.last4}.`,
+        '/cards'
+      ).catch(console.error);
       toast.success(`Successfully topped up $${amount.toFixed(2)}!`);
       await loadData();
     } catch (err) {

@@ -1,8 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useNavigate } from 'react-router';
 import Navigation from '../components/Navigation';
-import { 
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip 
-} from 'recharts';
 import { 
   ArrowUpRight, ArrowDownRight, 
   TrendingUp, Wallet, ArrowLeftRight, CreditCard, 
@@ -17,6 +15,14 @@ import { formatPrice, CoinData } from '../lib/crypto';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useAuth } from '../hooks/useAuth';
 import { getWatchlist } from '../lib/db';
+import DepositModal from '../components/DepositModal';
+import WithdrawModal from '../components/WithdrawModal';
+import SendModal from '../components/SendModal';
+import ReceiveModal from '../components/ReceiveModal';
+import PortfolioChart from '../components/PortfolioChart';
+import KYCBanner from '../components/KYCBanner';
+import KYCBadge from '../components/KYCBadge';
+import { useKYC } from '../hooks/useKYC';
 
 function CountUpText({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
   const { ref, value } = useCountUp(target, 1500, prefix, suffix, decimals);
@@ -25,9 +31,15 @@ function CountUpText({ target, prefix = '', suffix = '', decimals = 0 }: { targe
 
 export default function Dashboard() {
   const shouldReduceMotion = useReducedMotion();
+  const navigate = useNavigate();
   const [hideBalance, setHideBalance] = useState(false);
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
 
   const { user } = useAuth();
+  const { level, status } = useKYC();
 
   // Live Crypto Data Hook (WebSocket enabled)
   const { coins, loading: cryptoLoading } = useCryptoData();
@@ -39,7 +51,8 @@ export default function Dashboard() {
     totalValue,
     totalPnl,
     totalPnlPercent,
-    loading: portfolioLoading
+    loading: portfolioLoading,
+    refresh
   } = usePortfolio(coins);
 
   const loading = cryptoLoading || portfolioLoading;
@@ -57,15 +70,6 @@ export default function Dashboard() {
       .filter((c): c is CoinData => !!c);
   }, [watchlistSymbols, coins]);
 
-  const chartData = useMemo(() => [
-    { name: 'Jan', value: totalValue * 0.7 },
-    { name: 'Feb', value: totalValue * 0.8 },
-    { name: 'Mar', value: totalValue * 0.75 },
-    { name: 'Apr', value: totalValue * 0.9 },
-    { name: 'May', value: totalValue * 0.85 },
-    { name: 'Jun', value: totalValue },
-  ], [totalValue]);
-
   const newsList = [
     { title: 'Bitcoin surges past key resistance level', source: 'Bloomberg', time: '1 hour ago' },
     { title: 'DeFi TVL surges by $12B in active multi-chain deposits', source: 'CoinDesk', time: '4 hours ago' },
@@ -73,12 +77,12 @@ export default function Dashboard() {
   ];
 
   const quickActions = [
-    { label: 'Send', icon: ArrowUp, href: '/trade', color: 'text-primary bg-primary/10' },
-    { label: 'Receive', icon: ArrowDown, href: '/trade', color: 'text-success bg-success/10' },
-    { label: 'Deposit', icon: Wallet, href: '/trade', color: 'text-warning bg-warning/10' },
-    { label: 'Withdraw', icon: CreditCard, href: '/trade', color: 'text-indigo-500 bg-indigo-500/10' },
+    { label: 'Send', icon: ArrowUp, onClick: () => setSendOpen(true), color: 'text-primary bg-primary/10' },
+    { label: 'Receive', icon: ArrowDown, onClick: () => setReceiveOpen(true), color: 'text-success bg-success/10' },
+    { label: 'Deposit', icon: Wallet, onClick: () => setDepositOpen(true), color: 'text-warning bg-warning/10' },
+    { label: 'Withdraw', icon: CreditCard, onClick: () => setWithdrawOpen(true), color: 'text-indigo-500 bg-indigo-500/10' },
     { label: 'Swap', icon: ArrowLeftRight, href: '/swap', color: 'text-pink-500 bg-pink-500/10' },
-    { label: 'Trade', icon: TrendingUp, href: '/trade', color: 'text-cyan-500 bg-cyan-500/10' },
+    { label: 'Trade', icon: TrendingUp, onClick: () => navigate('/trade'), color: 'text-cyan-500 bg-cyan-500/10' },
   ];
 
 
@@ -87,6 +91,18 @@ export default function Dashboard() {
       <Navigation isPublic={false} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-8">
+        <KYCBanner />
+
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
+              <KYCBadge level={level} status={status} />
+            </div>
+            <p className="text-muted-foreground mt-1">Welcome back! Manage your portfolio and cards.</p>
+          </div>
+        </div>
         
         {/* Style block for chart gradient pulse animations */}
         <style dangerouslySetInnerHTML={{__html: `
@@ -108,98 +124,16 @@ export default function Dashboard() {
             initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
             animate={shouldReduceMotion ? {} : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.4, delay: 0.1 }}
-            className="lg:col-span-2 bg-card border border-border rounded-2xl p-6 lg:p-8 shadow-sm flex flex-col justify-between"
+            className="lg:col-span-2"
           >
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Total Portfolio Balance</span>
-                <button 
-                  onClick={() => setHideBalance(!hideBalance)}
-                  className="text-xs text-primary hover:underline font-semibold flex items-center gap-1 cursor-pointer"
-                >
-                  {hideBalance ? (
-                    <>
-                      <Eye className="w-4 h-4" />
-                      <span>Show Balance</span>
-                    </>
-                  ) : (
-                    <>
-                      <EyeOff className="w-4 h-4" />
-                      <span>Hide Balance</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              <div className="flex items-baseline gap-4 mb-2">
-                <span className="text-4xl lg:text-5xl font-black text-foreground font-mono tracking-tight">
-                  {hideBalance ? (
-                    '••••••••'
-                  ) : (
-                    <CountUpText target={totalValue} decimals={2} prefix="$" />
-                  )}
-                </span>
-                <span className={`text-sm font-bold px-2.5 py-1 rounded-lg flex items-center gap-0.5 ${totalPnl >= 0 ? 'text-success bg-success/10' : 'text-destructive bg-destructive/10'}`}>
-                  {totalPnl >= 0 ? <ArrowUpRight className="w-3.5 h-3.5" /> : <ArrowDownRight className="w-3.5 h-3.5" />}
-                  <span>
-                    <CountUpText target={Math.abs(totalPnlPercent)} decimals={2} suffix="%" />
-                  </span>
-                </span>
-              </div>
-              
-              <div className="text-xs text-muted-foreground flex gap-1 font-mono">
-                <span>Daily P&L:</span>
-                <span className={`${totalPnl >= 0 ? 'text-success' : 'text-destructive'} font-semibold`}>
-                  {hideBalance ? '••••' : `${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toLocaleString('en-US', { maximumFractionDigits: 2 })} (${totalPnlPercent.toFixed(2)}%)`}
-                </span>
-              </div>
-
-            </div>
-
-            {/* Premium pulsating Recharts AreaChart */}
-            <div className="h-[200px] w-full mt-6">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorPortfolio" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0066ff" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#0066ff" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="var(--muted-foreground)" 
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="var(--muted-foreground)" 
-                    fontSize={11}
-                    domain={['dataMin - 10000', 'dataMax + 10000']}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'var(--card)', 
-                      borderColor: 'var(--border)',
-                      borderRadius: '0.75rem',
-                      color: 'var(--foreground)'
-                    }} 
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#0066ff" 
-                    strokeWidth={2.5}
-                    fillOpacity={1} 
-                    fill="url(#colorPortfolio)" 
-                    className="chart-pulse-fill"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <PortfolioChart
+              transactions={dbTransactions}
+              coins={coins}
+              totalValue={totalValue}
+              totalPnl={totalPnl}
+              totalPnlPercent={totalPnlPercent}
+              loading={loading}
+            />
           </motion.div>
 
           {/* Quick Actions Panel */}
@@ -216,21 +150,28 @@ export default function Dashboard() {
                 variants={staggerFast}
                 className="grid grid-cols-2 gap-4"
               >
-                {quickActions.map((action) => (
-                  <motion.a
-                    key={action.label}
-                    href={action.href}
-                    variants={shouldReduceMotion ? {} : scaleIn}
-                    whileHover={shouldReduceMotion ? {} : { y: -4, scale: 1.02 }}
-                    whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
-                    className="p-4 rounded-xl border border-border bg-background hover:border-primary/40 hover:shadow-sm transition-all flex flex-col items-center gap-3 text-center cursor-pointer"
-                  >
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}>
-                      <action.icon className="w-5 h-5" />
-                    </div>
-                    <span className="text-xs font-semibold text-foreground">{action.label}</span>
-                  </motion.a>
-                ))}
+                {quickActions.map((action) => {
+                  const Component = action.onClick ? motion.button : motion.a;
+                  const extraProps = action.onClick 
+                    ? { onClick: action.onClick, type: 'button' as const } 
+                    : { href: action.href };
+                  
+                  return (
+                    <Component
+                      key={action.label}
+                      {...extraProps}
+                      variants={shouldReduceMotion ? {} : scaleIn}
+                      whileHover={shouldReduceMotion ? {} : { y: -4, scale: 1.02 }}
+                      whileTap={shouldReduceMotion ? {} : { scale: 0.98 }}
+                      className="p-4 rounded-xl border border-border bg-background hover:border-primary/40 hover:shadow-sm transition-all flex flex-col items-center gap-3 text-center cursor-pointer"
+                    >
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${action.color}`}>
+                        <action.icon className="w-5 h-5" />
+                      </div>
+                      <span className="text-xs font-semibold text-foreground">{action.label}</span>
+                    </Component>
+                  );
+                })}
               </motion.div>
             </div>
 
@@ -280,7 +221,8 @@ export default function Dashboard() {
                         variants={shouldReduceMotion ? {} : fadeUp}
                         whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
                         transition={{ duration: 0.15 }}
-                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors"
+                        onClick={() => navigate('/trade')}
+                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors cursor-pointer"
                       >
                         <div className="flex items-center gap-3">
                           <div 
@@ -485,6 +427,26 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      <DepositModal
+        open={depositOpen}
+        onClose={() => setDepositOpen(false)}
+        onSuccess={refresh}
+      />
+      <WithdrawModal
+        open={withdrawOpen}
+        onClose={() => setWithdrawOpen(false)}
+        onSuccess={refresh}
+      />
+      <SendModal
+        open={sendOpen}
+        onClose={() => setSendOpen(false)}
+        onSuccess={refresh}
+      />
+      <ReceiveModal
+        open={receiveOpen}
+        onClose={() => setReceiveOpen(false)}
+      />
     </div>
   );
 }

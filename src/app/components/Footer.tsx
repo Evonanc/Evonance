@@ -23,7 +23,7 @@ const FOOTER_LINKS = [
   {
     heading: "Support",
     links: [
-      { label: "Help Center", href: "#" },
+      { label: "Help Center", href: "/help" },
       { label: "Status",      href: "#" },
       { label: "API Docs",    href: "#" },
       { label: "Security",    href: "#" },
@@ -32,10 +32,10 @@ const FOOTER_LINKS = [
   {
     heading: "Legal",
     links: [
-      { label: "Privacy",    href: "#" },
-      { label: "Terms",      href: "#" },
-      { label: "Cookies",    href: "#" },
-      { label: "Licenses",   href: "#" },
+      { label: "Privacy",    href: "/privacy" },
+      { label: "Terms",      href: "/terms" },
+      { label: "Cookies",    href: "/cookies" },
+      { label: "Licenses",   href: "/compliance" },
     ],
   },
 ];
@@ -131,8 +131,8 @@ export default function Footer() {
               <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
               <p className="text-xs text-muted-foreground font-semibold">All systems operational</p>
             </div>
-            <Link to="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
-            <Link to="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
+            <Link to="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms</Link>
+            <Link to="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy</Link>
           </div>
         </div>
       </div>

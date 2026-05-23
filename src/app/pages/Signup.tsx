@@ -382,7 +382,7 @@ export default function Signup() {
                     className="h-4 w-4 mt-0.5 rounded border-border text-primary focus:ring-primary/20 bg-input-background"
                   />
                   <label htmlFor="agree" className="ml-2 block text-xs text-muted-foreground leading-normal font-normal">
-                    I agree to the <Link to="#" className="text-primary font-semibold hover:underline">Terms of Service</Link> and <Link to="#" className="text-primary font-semibold hover:underline">Privacy Policy</Link>
+                    I agree to the <Link to="/terms" className="text-primary font-semibold hover:underline">Terms of Service</Link> and <Link to="/privacy" className="text-primary font-semibold hover:underline">Privacy Policy</Link>
                   </label>
                 </motion.div>
 

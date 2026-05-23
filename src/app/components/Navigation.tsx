@@ -1,10 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Menu, X, LogOut } from 'lucide-react';
+import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion, Variants } from 'motion/react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
+import NotificationBell from './NotificationBell';
+import { useKYC } from '../hooks/useKYC';
+import KYCBadge from './KYCBadge';
 
 interface NavigationProps {
   isPublic?: boolean;
@@ -15,6 +18,7 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const { level, status } = useKYC();
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -202,6 +206,9 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
               </AnimatePresence>
             </motion.button>
 
+            {/* Notification bell — only for logged in users */}
+            {!isPublic && user && <NotificationBell />}
+
             {isPublic ? (
               <>
                 {user ? (
@@ -270,6 +277,23 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer"
                       >
                         Dashboard
+                      </button>
+                      <button
+                        onClick={() => { navigate('/settings'); setDropdownOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <SettingsIcon className="w-4 h-4 text-muted-foreground" />
+                        Settings
+                      </button>
+                      <button
+                        onClick={() => { navigate('/kyc'); setDropdownOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center justify-between cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          <Shield className="w-4 h-4 text-muted-foreground" />
+                          Identity Verification
+                        </span>
+                        <KYCBadge level={level} status={status} size="sm" />
                       </button>
                       <button
                         onClick={() => { navigate('/cards'); setDropdownOpen(false); }}

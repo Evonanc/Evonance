@@ -3,6 +3,7 @@ import Navigation from '../components/Navigation';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip 
 } from 'recharts';
+import TradingChart from '../components/TradingChart';
 import { 
   Search, Star, ChevronUp, ChevronDown, Clock, ArrowDown, ArrowUp 
 } from 'lucide-react';
@@ -12,6 +13,8 @@ import { fadeUp, scaleIn, staggerFast } from '../lib/animations';
 import { useCryptoData } from '../hooks/useCryptoData';
 import { formatPrice, formatVolume } from '../lib/crypto';
 import LiveIndicator from '../components/LiveIndicator';
+import { useAuth } from '../hooks/useAuth';
+import { buyCrypto, sellCrypto, getWallets, Wallet, getTransactions, Transaction, createNotification } from '../lib/db';
 
 interface Pair {
   symbol: string;
@@ -38,6 +41,32 @@ export default function Trade() {
   
   // Place Order button pulse trigger
   const [isSubmitClicked, setIsSubmitClicked] = useState(false);
+
+  const { user } = useAuth();
+  const [wallets, setWallets] = useState<Wallet[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+  const [orderSuccess, setOrderSuccess] = useState(false);
+  const [tradeHistory, setTradeHistory] = useState<Transaction[]>([]);
+
+  // Load wallets on mount and after each order
+  const loadWallets = async () => {
+    if (!user) return;
+    const w = await getWallets(user.id);
+    setWallets(w);
+  };
+
+  useEffect(() => { loadWallets(); }, [user]);
+
+  // Load on mount and after each order
+  useEffect(() => {
+    if (!user) return;
+    getTransactions(user.id, 50).then(txs => {
+      // Filter to only buy/sell transactions
+      setTradeHistory(txs.filter(t =>
+        t.type === 'buy' || t.type === 'sell'
+      ));
+    });
+  }, [user, orderSuccess]);
 
   // Live Crypto Data Hook (WebSocket enabled)
   const { coins, loading, wsConnected, source, lastUpdated } = useCryptoData();
@@ -110,6 +139,33 @@ export default function Trade() {
   );
 
   const currentPairPrice = activeCoin ? activeCoin.price : selectedPair.price;
+
+  // Get balances for current pair
+  const baseSymbol = selectedPair?.symbol?.replace('/USDT','') ?? 'BTC';
+  const currentPrice = activeCoin?.price ?? selectedPair?.price ?? 0;
+
+  const usdtBalance = wallets.find(w => w.symbol === 'USDT')?.balance ?? 0;
+  const cryptoBalance = wallets.find(w => w.symbol === baseSymbol)?.balance ?? 0;
+
+  // Auto-calculate total when price or amount changes
+  const effectivePrice = orderType.toLowerCase() === 'limit'
+    ? parseFloat(priceInput || '0')
+    : currentPrice;
+  const amountNum = parseFloat(amountInput || '0');
+  const totalNum = effectivePrice * amountNum;
+  const feeNum = totalNum * 0.001;
+
+  const handleMaxClick = () => {
+    const price = effectivePrice || currentPrice;
+    if (price <= 0) return;
+    if (activeTab.toLowerCase() === 'buy') {
+      const maxAmt = Math.max(0, usdtBalance / (price * 1.001));
+      setAmountInput(maxAmt.toFixed(6));
+    } else {
+      setAmountInput(cryptoBalance.toFixed(6));
+    }
+  };
+
 
   const chartData = [
     { name: '00:00', value: currentPairPrice - (currentPairPrice * 0.005) },
@@ -204,20 +260,96 @@ export default function Trade() {
     return () => clearInterval(timer);
   }, [selectedPair, activeCoin?.price]);
 
-  const handlePlaceOrder = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!amountInput || parseFloat(amountInput) <= 0) {
-      toast.error('Please enter a valid amount');
-      return;
+  const handlePlaceOrder = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!user) {
+      toast.error('Please log in to trade'); return;
     }
-    
-    if (!shouldReduceMotion) {
-      setIsSubmitClicked(true);
-      setTimeout(() => setIsSubmitClicked(false), 300);
+    if (!amountNum || amountNum <= 0) {
+      toast.error('Enter a valid amount'); return;
+    }
+    if (orderType.toLowerCase() === 'limit' && (!effectivePrice || effectivePrice <= 0)) {
+      toast.error('Enter a valid price'); return;
     }
 
-    toast.success(`${activeTab === 'buy' ? 'Buy' : 'Sell'} order placed successfully!`);
-    setAmountInput('');
+    setSubmitting(true);
+    try {
+      if (activeTab.toLowerCase() === 'buy') {
+        // Check USDT balance
+        const required = totalNum + feeNum;
+        if (required > usdtBalance) {
+          toast.error(
+            `Insufficient USDT. Need $${required.toFixed(2)},` +
+            ` have $${usdtBalance.toFixed(2)}`
+          );
+          return;
+        }
+        await buyCrypto(
+          user.id,
+          baseSymbol,
+          activeCoin?.name ?? baseSymbol,
+          amountNum,
+          effectivePrice || currentPrice
+        );
+        createNotification(
+          user.id, 'trade',
+          `Buy order filled`,
+          `Bought ${amountNum.toFixed(6)} ${baseSymbol} at $${(effectivePrice || currentPrice).toLocaleString()}`,
+          '/trade',
+          { symbol: baseSymbol, amount: amountNum, price: effectivePrice || currentPrice }
+        ).catch(console.error);
+        toast.success(
+          `Bought ${amountNum.toFixed(6)} ${baseSymbol} ` +
+          `for $${totalNum.toFixed(2)}`
+        );
+      } else {
+        // Sell
+        if (amountNum > cryptoBalance) {
+          toast.error(
+            `Insufficient ${baseSymbol}. ` +
+            `Have ${cryptoBalance.toFixed(6)}`
+          );
+          return;
+        }
+        await sellCrypto(
+          user.id,
+          baseSymbol,
+          activeCoin?.name ?? baseSymbol,
+          amountNum,
+          effectivePrice || currentPrice
+        );
+        createNotification(
+          user.id, 'trade',
+          `Sell order filled`,
+          `Sold ${amountNum.toFixed(6)} ${baseSymbol} for $${(totalNum - feeNum).toFixed(2)}`,
+          '/trade',
+          { symbol: baseSymbol, amount: amountNum, price: effectivePrice || currentPrice }
+        ).catch(console.error);
+        toast.success(
+          `Sold ${amountNum.toFixed(6)} ${baseSymbol} ` +
+          `for $${(totalNum - feeNum).toFixed(2)}`
+        );
+      }
+
+      // Flash success state on button
+      setOrderSuccess(true);
+      setTimeout(() => setOrderSuccess(false), 2000);
+
+      // Clear inputs
+      setAmountInput('');
+      
+      // Keep price input matching current pair price
+      const spotPrice = activeCoin ? activeCoin.price : selectedPair.price;
+      setPriceInput(spotPrice.toFixed(4));
+
+      // Refresh wallet balances
+      await loadWallets();
+
+    } catch (err: any) {
+      toast.error(err.message ?? 'Order failed. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -369,71 +501,14 @@ export default function Trade() {
             initial={shouldReduceMotion ? {} : { opacity: 0, scale: 0.95 }}
             animate={shouldReduceMotion ? {} : { opacity: 1, scale: 1 }}
             transition={{ duration: 0.4 }}
-            className="bg-card border border-border rounded-xl p-4 flex flex-col gap-4"
+            className="bg-card border border-border rounded-xl overflow-hidden flex flex-col"
+            style={{ height: '420px' }}
           >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-muted-foreground">Price Chart</span>
-              {/* Timeframe selectors */}
-              <div className="flex bg-secondary p-1 rounded-lg gap-1">
-                {['1H', '4H', '1D', '1W', '1M'].map((tf) => (
-                  <button
-                    key={tf}
-                    onClick={() => setTimeframe(tf)}
-                    className={`px-3 py-1 text-xs font-semibold rounded-md transition-all cursor-pointer ${
-                      timeframe === tf 
-                        ? 'bg-background text-primary shadow-sm' 
-                        : 'text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {tf}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Recharts Chart */}
-            <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorTrade" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#0066ff" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#0066ff" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <XAxis 
-                    dataKey="name" 
-                    stroke="var(--muted-foreground)" 
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    stroke="var(--muted-foreground)" 
-                    fontSize={11}
-                    domain={['dataMin - 100', 'dataMax + 100']}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <Tooltip 
-                    contentStyle={{ 
-                      backgroundColor: 'var(--card)', 
-                      borderColor: 'var(--border)',
-                      borderRadius: '0.75rem',
-                      color: 'var(--foreground)'
-                    }} 
-                  />
-                  <Area 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#0066ff" 
-                    strokeWidth={2}
-                    fillOpacity={1} 
-                    fill="url(#colorTrade)" 
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+            <TradingChart
+              symbol={selectedPair?.symbol?.replace('/', '') ?? 'BTCUSDT'}
+              currentPrice={activeCoin?.price ?? selectedPair?.price ?? 0}
+              change24h={activeCoin?.change24h ?? (selectedPair?.isUp ? 1 : -1)}
+            />
           </motion.div>
 
           {/* Bottom Tabs area */}
@@ -534,9 +609,51 @@ export default function Trade() {
               )}
 
               {bottomTab === 'history' && (
-                <div className="py-8 text-center text-muted-foreground">
-                  <Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/60" />
-                  <p className="text-sm">No historical orders found</p>
+                <div className="w-full">
+                  {tradeHistory.length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground">
+                      <Clock className="w-8 h-8 mx-auto mb-2 text-muted-foreground/60" />
+                      <p className="text-sm">No trade history yet. Place your first order above.</p>
+                    </div>
+                  ) : (
+                    <div className="max-h-[300px] overflow-y-auto space-y-1">
+                      {tradeHistory.map(tx => (
+                        <div key={tx.id} className="flex items-center justify-between
+                          py-3 border-b border-border/50 last:border-0 font-semibold">
+                          <div className="flex items-center gap-3 font-semibold">
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded
+                              ${tx.type === 'buy'
+                                ? 'bg-success/10 text-success'
+                                : 'bg-destructive/10 text-destructive'
+                              }`}>
+                              {tx.type.toUpperCase()}
+                            </span>
+                            <div>
+                              <p className="text-sm font-semibold text-foreground">
+                                {tx.symbol}/USDT
+                              </p>
+                              <p className="text-xs text-muted-foreground font-semibold">{tx.note}</p>
+                            </div>
+                          </div>
+                          <div className="text-right font-semibold">
+                            <p className="text-sm font-bold text-foreground font-mono">
+                              ${tx.total_usd.toLocaleString('en-US',
+                                { maximumFractionDigits: 2 })}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-semibold">
+                              {(() => {
+                                const diff = Date.now() - new Date(tx.created_at).getTime();
+                                if (diff < 60000) return 'Just now';
+                                if (diff < 3600000) return Math.floor(diff/60000) + 'm ago';
+                                if (diff < 86400000) return Math.floor(diff/3600000) + 'h ago';
+                                return Math.floor(diff/86400000) + 'd ago';
+                              })()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -708,7 +825,7 @@ export default function Trade() {
                 <div>
                   <label htmlFor="order-amount" className="block text-xs font-semibold text-muted-foreground mb-1.5 flex justify-between">
                     <span>Amount ({selectedPair.name})</span>
-                    <span className="text-[10px] text-primary hover:underline cursor-pointer" onClick={() => setAmountInput('0.5')}>MAX</span>
+                    <span className="text-[10px] text-primary hover:underline cursor-pointer font-semibold" onClick={handleMaxClick}>MAX</span>
                   </label>
                   <input
                     id="order-amount"
@@ -722,35 +839,93 @@ export default function Trade() {
                 </div>
               </div>
 
-              {/* Total */}
-              <div className="bg-secondary/50 rounded-lg p-3 space-y-2 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Estimated Total:</span>
-                  <span className="font-bold text-foreground font-mono">{totalCost} USDT</span>
+              {/* Total and fee details */}
+              {amountNum > 0 && (
+                <div className="bg-secondary rounded-lg p-3 space-y-1.5 mt-2">
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Price</span>
+                    <span className="text-foreground font-mono font-semibold">
+                      ${(effectivePrice || currentPrice).toLocaleString('en-US',
+                        { maximumFractionDigits: 4 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Total</span>
+                    <span className="text-foreground font-mono font-semibold">
+                      ${totalNum.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-muted-foreground">Fee (0.1%)</span>
+                    <span className="text-foreground font-mono font-semibold">
+                      ${feeNum.toLocaleString('en-US', { maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="border-t border-border pt-1.5 flex justify-between text-xs">
+                    <span className="font-semibold text-foreground">
+                      {activeTab.toLowerCase() === 'buy' ? 'Total cost' : 'You receive'}
+                    </span>
+                    <span className="font-bold text-foreground font-mono">
+                      {activeTab.toLowerCase() === 'buy'
+                        ? `$${(totalNum + feeNum).toFixed(2)}`
+                        : `$${(totalNum - feeNum).toFixed(2)}`
+                      }
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Insufficient funds CTA */}
+              {usdtBalance === 0 && activeTab.toLowerCase() === 'buy' && (
+                <div className="flex items-center justify-between p-3 bg-warning/10
+                  border border-warning/20 rounded-lg text-xs">
+                  <span className="text-warning font-semibold">No USDT balance</span>
+                  <a href="/dashboard"
+                    className="text-primary font-semibold hover:underline">
+                    Deposit funds →
+                  </a>
+                </div>
+              )}
 
               {/* Place Order Button */}
-              <motion.button
+              <button
                 type="submit"
-                animate={isSubmitClicked ? { scale: [1, 1.05, 1] } : {}}
-                transition={{ duration: 0.3 }}
-                whileHover={shouldReduceMotion ? {} : { scale: 1.02 }}
-                whileTap={shouldReduceMotion ? {} : { scale: 0.96 }}
-                className={`w-full py-3 text-white font-bold rounded-xl transition-all shadow-lg cursor-pointer ${
-                  activeTab === 'buy'
-                    ? 'bg-success hover:bg-success/95 shadow-success/15'
-                    : 'bg-destructive hover:bg-destructive/95 shadow-destructive/15'
-                }`}
+                disabled={submitting || !amountNum || amountNum <= 0}
+                className={`w-full rounded-xl py-3 font-semibold transition-all cursor-pointer
+                  disabled:opacity-50 disabled:cursor-not-allowed
+                  ${orderSuccess
+                    ? 'bg-success text-success-foreground font-bold'
+                    : activeTab.toLowerCase() === 'buy'
+                      ? 'bg-success text-success-foreground hover:opacity-90 shadow-lg shadow-success/15 font-bold'
+                      : 'bg-destructive text-destructive-foreground hover:opacity-90 shadow-lg shadow-destructive/15 font-bold'
+                  }`}
               >
-                <span>{activeTab === 'buy' ? 'Place Buy Order' : 'Place Sell Order'}</span>
-              </motion.button>
+                {submitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white
+                      rounded-full animate-spin" />
+                    Processing...
+                  </span>
+                ) : orderSuccess ? (
+                  <span className="flex items-center justify-center gap-2 font-bold">
+                    ✓ Order Placed
+                  </span>
+                ) : (
+                  `${activeTab.toLowerCase() === 'buy' ? 'Buy' : 'Sell'} ${baseSymbol}`
+                )}
+              </button>
             </form>
 
             {/* Balance display */}
-            <div className="mt-6 pt-4 border-t border-border flex justify-between text-xs text-muted-foreground">
+            <div className="mt-6 pt-4 border-t border-border flex justify-between text-xs text-muted-foreground font-semibold">
               <span>Available Balance:</span>
-              <span className="font-semibold text-foreground">10,254.50 USDT</span>
+              <span className="font-bold text-foreground font-mono">
+                {activeTab.toLowerCase() === 'buy' ? (
+                  `$${usdtBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDT`
+                ) : (
+                  `${cryptoBalance.toFixed(6)} ${baseSymbol}`
+                )}
+              </span>
             </div>
           </div>
         </div>
