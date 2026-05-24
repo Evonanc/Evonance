@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield, ShieldCheck, Gift } from 'lucide-react';
+import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield, ShieldCheck, Gift, LayoutDashboard } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion, Variants } from 'motion/react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
@@ -9,6 +9,7 @@ import NotificationBell from './NotificationBell';
 import { useKYC } from '../hooks/useKYC';
 import KYCBadge from './KYCBadge';
 import { isMFAEnabled } from '../lib/mfa';
+import { isAdmin } from '../lib/admin';
 
 interface NavigationProps {
   isPublic?: boolean;
@@ -25,10 +26,12 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
 
   useEffect(() => {
     if (user) {
       isMFAEnabled().then(setMfaEnabled).catch(() => {});
+      isAdmin().then(setShowAdmin).catch(() => {});
     }
   }, [user]);
   
@@ -334,6 +337,17 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                         My Cards
                       </button>
                     </div>
+                    {showAdmin && (
+                      <div className="border-t border-border py-1">
+                        <button
+                          onClick={() => { navigate('/admin'); setDropdownOpen(false); }}
+                          className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer font-semibold"
+                        >
+                          <LayoutDashboard className="w-4 h-4" />
+                          Admin Panel
+                        </button>
+                      </div>
+                    )}
                     <div className="border-t border-border py-1">
                       <button
                         onClick={handleLogout}

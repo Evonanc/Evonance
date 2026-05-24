@@ -28,6 +28,14 @@ import InstallGuide from './pages/InstallGuide';
 import OfflineBanner from './components/OfflineBanner';
 import PWAUpdateBanner from './components/PWAUpdateBanner';
 
+import AdminOverview     from './pages/admin/AdminOverview';
+import AdminUsers        from './pages/admin/AdminUsers';
+import AdminTransactions from './pages/admin/AdminTransactions';
+import AdminKYC          from './pages/admin/AdminKYC';
+import AdminReferrals    from './pages/admin/AdminReferrals';
+import AdminAudit        from './pages/admin/AdminAudit';
+import AdminSettings     from './pages/admin/AdminSettings';
+
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
   return (
@@ -127,6 +135,15 @@ function AnimatedRoutes() {
         <Route path="/help/:articleId"  element={<PageTransitionWrapper><HelpArticle /></PageTransitionWrapper>} />
         <Route path="/verify-2fa"       element={<PageTransitionWrapper><Verify2FA /></PageTransitionWrapper>} />
         <Route path="/install"          element={<PageTransitionWrapper><InstallGuide /></PageTransitionWrapper>} />
+
+        {/* Admin routes — ProtectedRoute (auth) + AdminGuard (role) inside each page */}
+        <Route path="/admin"              element={<ProtectedRoute><AdminOverview /></ProtectedRoute>} />
+        <Route path="/admin/users"        element={<ProtectedRoute><AdminUsers /></ProtectedRoute>} />
+        <Route path="/admin/transactions" element={<ProtectedRoute><AdminTransactions /></ProtectedRoute>} />
+        <Route path="/admin/kyc"          element={<ProtectedRoute><AdminKYC /></ProtectedRoute>} />
+        <Route path="/admin/referrals"    element={<ProtectedRoute><AdminReferrals /></ProtectedRoute>} />
+        <Route path="/admin/audit"        element={<ProtectedRoute><AdminAudit /></ProtectedRoute>} />
+        <Route path="/admin/settings"     element={<ProtectedRoute><AdminSettings /></ProtectedRoute>} />
       </Routes>
     </AnimatePresence>
   );
