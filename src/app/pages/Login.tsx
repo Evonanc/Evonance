@@ -7,6 +7,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInRight, staggerContainer } from '../lib/animations';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { getMFAFactors, getAssuranceLevel } from '../lib/mfa';
 
 export default function Login() {
   const { theme, setTheme } = useTheme();
@@ -43,8 +44,22 @@ export default function Login() {
         password,
       });
       if (error) throw error;
-      toast.success('Welcome back!');
-      navigate(from, { replace: true });
+
+      // Check if user has 2FA enabled
+      const factors = await getMFAFactors();
+      const hasVerified2FA = factors.some(f => f.status === 'verified');
+
+      if (hasVerified2FA) {
+        // Redirect to 2FA verification page
+        navigate('/verify-2fa', {
+          state: { from },
+          replace: true,
+        });
+      } else {
+        // No 2FA — go straight to destination
+        toast.success('Welcome back!');
+        navigate(from, { replace: true });
+      }
     } catch (err: any) {
       toast.error(err.message ?? 'Login failed. Please try again.');
     } finally {

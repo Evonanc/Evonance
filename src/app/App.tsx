@@ -16,12 +16,17 @@ import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Notifications from './pages/Notifications';
 import KYCOnboarding from './pages/KYCOnboarding';
+import Referral from './pages/Referral';
 import PrivacyPolicy from './pages/legal/PrivacyPolicy';
 import TermsOfService from './pages/legal/TermsOfService';
 import CookiePolicy from './pages/legal/CookiePolicy';
 import Compliance from './pages/legal/Compliance';
 import HelpCenter from './pages/HelpCenter';
 import HelpArticle from './pages/HelpArticle';
+import Verify2FA from './pages/Verify2FA';
+import InstallGuide from './pages/InstallGuide';
+import OfflineBanner from './components/OfflineBanner';
+import PWAUpdateBanner from './components/PWAUpdateBanner';
 
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
@@ -106,12 +111,22 @@ function AnimatedRoutes() {
           </ProtectedRoute>
         } />
         
+        <Route path="/referral" element={
+          <ProtectedRoute>
+            <PageTransitionWrapper>
+              <Referral />
+            </PageTransitionWrapper>
+          </ProtectedRoute>
+        } />
+        
         <Route path="/privacy"    element={<PageTransitionWrapper><PrivacyPolicy /></PageTransitionWrapper>} />
         <Route path="/terms"      element={<PageTransitionWrapper><TermsOfService /></PageTransitionWrapper>} />
         <Route path="/cookies"    element={<PageTransitionWrapper><CookiePolicy /></PageTransitionWrapper>} />
         <Route path="/compliance" element={<PageTransitionWrapper><Compliance /></PageTransitionWrapper>} />
         <Route path="/help"             element={<PageTransitionWrapper><HelpCenter /></PageTransitionWrapper>} />
         <Route path="/help/:articleId"  element={<PageTransitionWrapper><HelpArticle /></PageTransitionWrapper>} />
+        <Route path="/verify-2fa"       element={<PageTransitionWrapper><Verify2FA /></PageTransitionWrapper>} />
+        <Route path="/install"          element={<PageTransitionWrapper><InstallGuide /></PageTransitionWrapper>} />
       </Routes>
     </AnimatePresence>
   );
@@ -120,10 +135,12 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+      <OfflineBanner />
       <BrowserRouter>
         <AnimatedRoutes />
       </BrowserRouter>
       <Toaster position="top-right" />
+      <PWAUpdateBanner />
     </ThemeProvider>
   );
 }

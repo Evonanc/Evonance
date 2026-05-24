@@ -27,7 +27,7 @@
 */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, Link } from 'react-router';
 import Navigation from '../components/Navigation';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
@@ -38,10 +38,11 @@ import { toast } from 'sonner';
 import { useTheme } from 'next-themes';
 import {
   User, Lock, Bell, Camera, Check, Eye, EyeOff,
-  Smartphone, Globe, ChevronRight, Trash2, LogOut
+  Smartphone, Globe, ChevronRight, Trash2, LogOut, Download
 } from 'lucide-react';
 import { useKYC } from '../hooks/useKYC';
 import KYCBadge from '../components/KYCBadge';
+import MFASetup from '../components/MFASetup';
 
 // ── Sidebar sections ──────────────────────────────────────────────
 const SECTIONS = [
@@ -722,6 +723,8 @@ function SecuritySection({ user }: SecuritySectionProps) {
           Sign out all other sessions
         </button>
       </div>
+
+      <MFASetup />
     </div>
   );
 }
@@ -952,6 +955,24 @@ function PreferencesSection() {
             Save Preferences
           </button>
         </div>
+      </div>
+
+      {/* Install App */}
+      <div className="bg-card border border-border rounded-2xl p-6">
+        <h2 className="text-lg font-bold text-foreground mb-1">
+          Install App
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Add EVONANCE to your home screen for instant, native-like access — no App Store needed.
+        </p>
+        <Link
+          to="/install"
+          className="inline-flex items-center gap-2 bg-primary/10 text-primary
+            rounded-xl px-5 py-2.5 text-sm font-semibold hover:bg-primary/20
+            transition-colors decoration-none">
+          <Download className="w-4 h-4" />
+          View install guide →
+        </Link>
       </div>
     </div>
   );

@@ -657,3 +657,164 @@ export async function uploadKYCDocument(
   return path;
 }
 
+// ── Referral System ────────────────────────────────────────────────
+
+export interface ReferralSettings {
+  id: string;
+  user_id: string;
+  code: string;
+  total_referrals: number;
+  qualified_referrals: number;
+  total_earned: number;
+  created_at: string;
+}
+
+export interface Referral {
+  id: string;
+  referrer_id: string;
+  referred_id?: string;
+  code: string;
+  status: 'pending' | 'signed_up' | 'qualified' | 'rewarded';
+  reward_amount: number;
+  reward_credited: boolean;
+  clicks: number;
+  referred_email?: string;
+  completed_at?: string;
+  rewarded_at?: string;
+  created_at: string;
+}
+
+export const REFERRAL_REWARDS = {
+  perQualifiedReferral: 10,   // $10 USDT per referral
+  minTradeToQualify:    50,    // referred user must trade $50+
+  maxReferrals:         100,   // max rewarded referrals per user
+};
+
+export async function getReferralSettings(
+  userId: string
+): Promise<ReferralSettings | null> {
+  const { data, error } = await supabase
+    .from('referral_settings')
+    .select('*')
+    .eq('user_id', userId)
+    .single();
+  if (error) return null;
+  return data;
+}
+
+export async function getReferrals(
+  userId: string
+): Promise<Referral[]> {
+  const { data, error } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('referrer_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function trackReferralClick(
+  code: string
+): Promise<void> {
+  // Increment click counter
+  try {
+    const { error } = await supabase.rpc('increment_referral_clicks', { p_code: code });
+    if (error) throw error;
+  } catch (err) {
+    // Fallback if RPC doesn't exist
+    const { data } = await supabase
+      .from('referrals')
+      .select('id, clicks')
+      .eq('code', code)
+      .eq('status', 'pending')
+      .single();
+    if (data) {
+      await supabase
+        .from('referrals')
+        .update({ clicks: (data.clicks ?? 0) + 1 })
+        .eq('id', data.id);
+    }
+  }
+}
+
+export async function applyReferralCode(
+  referrerId: string,
+  code: string,
+  referredEmail: string
+): Promise<void> {
+  // Create a new referral record
+  await supabase.from('referrals').insert({
+    referrer_id: referrerId,
+    code,
+    status: 'signed_up',
+    reward_amount: REFERRAL_REWARDS.perQualifiedReferral,
+    referred_email: referredEmail,
+  });
+
+  // Update referrer stats
+  await supabase
+    .from('referral_settings')
+    .update({
+      total_referrals: supabase.rpc('increment', {
+        row_id: referrerId, column: 'total_referrals'
+      })
+    })
+    .eq('user_id', referrerId);
+}
+
+export async function creditReferralReward(
+  userId: string,
+  referralId: string,
+  amount: number
+): Promise<void> {
+  // Add USDT reward to referrer wallet
+  const wallet = await getWallet(userId, 'USDT');
+  await upsertWallet(
+    userId, 'USDT', 'Tether',
+    (wallet?.balance ?? 0) + amount, 1
+  );
+
+  // Record as transaction
+  await addTransaction(userId, {
+    type: 'receive',
+    symbol: 'USDT',
+    amount,
+    price_usd: 1,
+    total_usd: amount,
+    fee_usd: 0,
+    status: 'completed',
+    note: `Referral reward — $${amount} USDT`,
+  });
+
+  // Mark referral as rewarded
+  await supabase
+    .from('referrals')
+    .update({
+      status: 'rewarded',
+      reward_credited: true,
+      rewarded_at: new Date().toISOString(),
+    })
+    .eq('id', referralId);
+
+  // Update total earned
+  const settings = await getReferralSettings(userId);
+  await supabase
+    .from('referral_settings')
+    .update({
+      total_earned: (settings?.total_earned ?? 0) + amount,
+      qualified_referrals: (settings?.qualified_referrals ?? 0) + 1,
+    })
+    .eq('user_id', userId);
+
+  // Create notification
+  await createNotification(
+    userId, 'receive',
+    'Referral reward credited!',
+    `You earned $${amount} USDT for referring a new user. ` +
+    `Keep sharing to earn more.`,
+    '/referral'
+  );
+}
+
+

@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
-import { Link, useNavigate, Navigate } from 'react-router';
+import React, { useState, useEffect } from 'react';
+import { Link, useNavigate, Navigate, useSearchParams } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Wallet, CreditCard, Lock, Mail, CheckCircle } from 'lucide-react';
+import { Sun, Moon, Wallet, CreditCard, Lock, Mail, CheckCircle, Check, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInRight, staggerContainer } from '../lib/animations';
@@ -21,6 +21,30 @@ export default function Signup() {
   const [agree, setAgree] = useState(false);
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+
+  const [searchParams] = useSearchParams();
+  const [refCode, setRefCode] = useState(
+    searchParams.get('ref') ?? ''
+  );
+  const [refValid, setRefValid] = useState<boolean | null>(null);
+
+  // Validate referral code when entered
+  const validateRefCode = async (code: string) => {
+    if (!code || code.length < 4) {
+      setRefValid(null);
+      return;
+    }
+    const { data } = await supabase
+      .from('referral_settings')
+      .select('code, user_id')
+      .eq('code', code.toUpperCase())
+      .single();
+    setRefValid(!!data);
+  };
+
+  useEffect(() => {
+    if (refCode) validateRefCode(refCode);
+  }, [refCode]);
 
   const shouldReduceMotion = useReducedMotion();
 
@@ -79,6 +103,7 @@ export default function Signup() {
             full_name: `${firstName} ${lastName}`.trim(),
             first_name: firstName,
             last_name: lastName,
+            referral_code: refCode || null,  // ADD THIS
           },
         },
       });
@@ -292,6 +317,57 @@ export default function Signup() {
                       />
                     )}
                   </div>
+                </motion.div>
+
+                {/* Referral Code Field */}
+                <motion.div variants={shouldReduceMotion ? {} : fadeUp}>
+                  <label className="text-sm font-medium text-foreground block mb-1.5">
+                    Referral code
+                    <span className="text-muted-foreground font-normal ml-1">
+                      (optional)
+                    </span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      value={refCode}
+                      onChange={e => {
+                        setRefCode(e.target.value.toUpperCase());
+                        validateRefCode(e.target.value.toUpperCase());
+                      }}
+                      placeholder="e.g. EVON1234"
+                      maxLength={8}
+                      className={`w-full bg-input-background border rounded-lg
+                        px-4 pr-10 py-2.5 text-foreground font-mono text-sm
+                        placeholder:text-muted-foreground focus:outline-none
+                        focus:ring-2 transition-all uppercase
+                        ${refValid === true
+                          ? 'border-success focus:border-success focus:ring-success/20'
+                          : refValid === false
+                            ? 'border-destructive focus:border-destructive focus:ring-destructive/20'
+                            : 'border-border focus:border-primary focus:ring-primary/20'
+                        }`}
+                    />
+                    {refValid === true && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <Check className="w-4 h-4 text-success" />
+                      </span>
+                    )}
+                    {refValid === false && (
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <AlertCircle className="w-4 h-4 text-destructive" />
+                      </span>
+                    )}
+                  </div>
+                  {refValid === true && (
+                    <p className="text-xs text-success mt-1">
+                      Valid referral code — you'll both earn $10 USDT!
+                    </p>
+                  )}
+                  {refValid === false && (
+                    <p className="text-xs text-destructive mt-1">
+                      Invalid referral code. Leave blank if you don't have one.
+                    </p>
+                  )}
                 </motion.div>
 
                 <motion.div variants={shouldReduceMotion ? {} : fadeUp}>

@@ -34,3 +34,6 @@ yarn-error.log*
 
 # Custom local node installation
 node-v20.18.1-darwin-x64
+
+# PWA dev builds
+/dev-dist

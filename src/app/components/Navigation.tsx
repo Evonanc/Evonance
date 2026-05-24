@@ -1,13 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
-import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield } from 'lucide-react';
+import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield, ShieldCheck, Gift } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion, Variants } from 'motion/react';
 import { useAuth } from '../hooks/useAuth';
 import { supabase } from '../lib/supabase';
 import NotificationBell from './NotificationBell';
 import { useKYC } from '../hooks/useKYC';
 import KYCBadge from './KYCBadge';
+import { isMFAEnabled } from '../lib/mfa';
 
 interface NavigationProps {
   isPublic?: boolean;
@@ -23,6 +24,13 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      isMFAEnabled().then(setMfaEnabled).catch(() => {});
+    }
+  }, [user]);
   
   const dropdownRef = useRef<HTMLDivElement>(null);
   const shouldReduceMotion = useReducedMotion();
@@ -270,6 +278,23 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                         {user?.user_metadata?.full_name ?? 'User'}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        {mfaEnabled ? (
+                          <div className="flex items-center gap-1.5 text-xs text-success font-medium">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            2FA enabled
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 text-xs text-warning font-medium">
+                            <Shield className="w-3.5 h-3.5" />
+                            <button
+                              onClick={() => { navigate('/settings'); setDropdownOpen(false); }}
+                              className="hover:underline cursor-pointer bg-transparent border-none p-0 text-warning text-xs font-medium">
+                              Enable 2FA
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div className="py-1">
                       <button
@@ -284,6 +309,13 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       >
                         <SettingsIcon className="w-4 h-4 text-muted-foreground" />
                         Settings
+                      </button>
+                      <button
+                        onClick={() => { navigate('/referral'); setDropdownOpen(false); }}
+                        className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
+                      >
+                        <Gift className="w-4 h-4 text-muted-foreground" />
+                        Refer & Earn
                       </button>
                       <button
                         onClick={() => { navigate('/kyc'); setDropdownOpen(false); }}

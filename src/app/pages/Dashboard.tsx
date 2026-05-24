@@ -23,6 +23,8 @@ import PortfolioChart from '../components/PortfolioChart';
 import KYCBanner from '../components/KYCBanner';
 import KYCBadge from '../components/KYCBadge';
 import { useKYC } from '../hooks/useKYC';
+import PWAInstallBanner from '../components/PWAInstallBanner';
+import ReferralCard from '../components/ReferralCard';
 
 function CountUpText({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
   const { ref, value } = useCountUp(target, 1500, prefix, suffix, decimals);
@@ -91,6 +93,7 @@ export default function Dashboard() {
       <Navigation isPublic={false} />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-8 space-y-8">
+        <PWAInstallBanner />
         <KYCBanner />
 
         {/* Header */}
@@ -336,6 +339,7 @@ export default function Dashboard() {
 
           {/* COL 3: Watchlist & News */}
           <div className="space-y-6">
+            <ReferralCard />
             
             {/* Watchlist */}
             <motion.div 

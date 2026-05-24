@@ -17,6 +17,7 @@ import { useTopCoins } from '../hooks/useCryptoData';
 import { formatPrice } from '../lib/crypto';
 import LiveIndicator from '../components/LiveIndicator';
 import Footer from '../components/Footer';
+import PWAInstallBanner from '../components/PWAInstallBanner';
 
 // Custom CountUp Component to cleanly trigger individual stat triggers
 function StatCounter({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
@@ -165,6 +166,7 @@ export default function Homepage() {
       )}
 
       <Navigation isPublic={true} />
+      <PWAInstallBanner />
 
       {/* SECTION 1 — Hero */}
       <section className="relative overflow-hidden bg-background">
