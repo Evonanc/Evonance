@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import Navigation from '../components/Navigation';
 import { 
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip 
@@ -197,7 +197,7 @@ export default function Trade() {
       price: activeCoin.bid - i * spread * 0.5,
       amount: +(Math.random() * 2 + 0.1).toFixed(3),
     }));
-  }, [activeCoin, activeCoin?.price, selectedPair.price]);
+  }, [activeCoin?.bid, activeCoin?.ask, selectedPair.price]);
 
   const asks = useMemo(() => {
     if (!activeCoin) {
@@ -212,7 +212,7 @@ export default function Trade() {
       price: activeCoin.ask + i * spread * 0.5,
       amount: +(Math.random() * 2 + 0.1).toFixed(3),
     })).reverse();
-  }, [activeCoin, activeCoin?.price, selectedPair.price]);
+  }, [activeCoin?.bid, activeCoin?.ask, selectedPair.price]);
 
   // Live prepend recent trades logic (every 2s)
   interface TradeItem {
@@ -260,7 +260,7 @@ export default function Trade() {
     return () => clearInterval(timer);
   }, [selectedPair, activeCoin?.price]);
 
-  const handlePlaceOrder = async (e?: React.FormEvent) => {
+  const handlePlaceOrder = useCallback(async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!user) {
       toast.error('Please log in to trade'); return;
@@ -350,7 +350,21 @@ export default function Trade() {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [
+    user,
+    amountNum,
+    orderType,
+    effectivePrice,
+    activeTab,
+    totalNum,
+    feeNum,
+    usdtBalance,
+    baseSymbol,
+    activeCoin,
+    currentPrice,
+    cryptoBalance,
+    selectedPair,
+  ]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

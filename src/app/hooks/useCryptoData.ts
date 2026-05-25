@@ -136,9 +136,12 @@ export function useCryptoData() {
     const ordered = TRACKED_PAIRS
       .map(id => coinsRef.current.get(id))
       .filter(Boolean) as CoinData[];
-    setCoins([...ordered]);
-    setLastUpdated(new Date());
-    setLoading(false);
+    
+    if (mountedRef.current) {
+      setCoins([...ordered]);
+      setLastUpdated(new Date());
+      setLoading(false);
+    }
   }, []);
 
   // ── Bybit WebSocket ────────────────────────────────────────────
@@ -154,7 +157,9 @@ export function useCryptoData() {
       ws.onopen = () => {
         console.log('[Bybit WS] Connected ✓');
         retryDelay.current = 1000;
-        setWsConnected(true);
+        if (mountedRef.current) {
+          setWsConnected(true);
+        }
 
         // Bybit limit: 10 topics per subscribe message — batch them
         const args = TRACKED_PAIRS.map(s => `tickers.${s}`);
@@ -177,7 +182,6 @@ export function useCryptoData() {
       ws.onmessage = (evt) => {
         try {
           const msg = JSON.parse(evt.data as string);
-          console.log('[Bybit WS]', msg.op ?? msg.topic, msg.type ?? '', msg.ret_msg ?? '');
 
           // Pong response — ignore
           if (msg.op === 'pong' || msg.ret_msg === 'pong') return;
@@ -200,15 +204,18 @@ export function useCryptoData() {
             const coin = makeCoinFromBybitSnapshot(pairId, d);
             if (coin.price > 0) {
               coinsRef.current.set(pairId, coin);
-              console.log(`[Bybit WS] ${pairId} snapshot price: $${coin.price}`);
-              setSource('bybit');
-              updateCoins();
+              if (mountedRef.current) {
+                setSource('bybit');
+                updateCoins();
+              }
             }
           } else {
             const updated = updateCoinFromBybitDelta(existing, d);
             coinsRef.current.set(pairId, updated);
-            if (updated.price > 0) setSource('bybit');
-            updateCoins();
+            if (mountedRef.current) {
+              if (updated.price > 0) setSource('bybit');
+              updateCoins();
+            }
           }
         } catch (err) {
           console.error('[Bybit WS] Parse error:', err, evt.data);
@@ -217,12 +224,16 @@ export function useCryptoData() {
 
       ws.onerror = (err) => {
         console.error('[Bybit WS] Error:', err);
-        setWsConnected(false);
+        if (mountedRef.current) {
+          setWsConnected(false);
+        }
       };
 
       ws.onclose = (evt) => {
         console.warn('[Bybit WS] Closed. Code:', evt.code, 'Reason:', evt.reason || '(none)');
-        setWsConnected(false);
+        if (mountedRef.current) {
+          setWsConnected(false);
+        }
         clearInterval(pingRef.current);
 
         if (!mountedRef.current) return;
@@ -261,8 +272,10 @@ export function useCryptoData() {
             coinsRef.current.set(coin.id, coin);
           }
         });
-        setSource(prev => prev === 'bybit' ? 'bybit' : 'coingecko');
-        updateCoins();
+        if (mountedRef.current) {
+          setSource(prev => prev === 'bybit' ? 'bybit' : 'coingecko');
+          updateCoins();
+        }
         console.log('[CoinGecko] Bootstrap loaded:', cgData.length, 'coins');
       }
     });
@@ -274,8 +287,10 @@ export function useCryptoData() {
         if (!mountedRef.current) return;
         if (cgData.length > 0 && source !== 'bybit') {
           cgData.forEach(coin => coinsRef.current.set(coin.id, coin));
-          setSource('coingecko');
-          updateCoins();
+          if (mountedRef.current) {
+            setSource('coingecko');
+            updateCoins();
+          }
           console.log('[CoinGecko] Polled:', cgData.length, 'coins');
         }
       });

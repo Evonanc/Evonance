@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback, memo } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Menu, X, LogOut, Settings as SettingsIcon, Shield, ShieldCheck, Gift, LayoutDashboard } from 'lucide-react';
@@ -10,17 +10,19 @@ import { useKYC } from '../hooks/useKYC';
 import KYCBadge from './KYCBadge';
 import { isMFAEnabled } from '../lib/mfa';
 import { isAdmin } from '../lib/admin';
+import { usePrefetch } from '../hooks/usePrefetch';
 
 interface NavigationProps {
   isPublic?: boolean;
 }
 
-export default function Navigation({ isPublic = false }: NavigationProps) {
+function Navigation({ isPublic = false }: NavigationProps) {
   const { theme, setTheme } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { level, status } = useKYC();
+  const prefetch = usePrefetch();
   
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -62,14 +64,14 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
 
-  const handleLogout = async () => {
+  const handleLogout = useCallback(async () => {
     await supabase.auth.signOut();
     setDropdownOpen(false);
     navigate('/');
-  };
+  }, [navigate]);
 
   // Get initials from user metadata or email
-  const getInitials = () => {
+  const getInitials = useCallback(() => {
     const name = user?.user_metadata?.full_name as string;
     if (name) {
       const parts = name.split(' ');
@@ -78,7 +80,7 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
         : parts[0][0].toUpperCase();
     }
     return user?.email?.[0]?.toUpperCase() ?? 'U';
-  };
+  }, [user]);
 
   const publicLinks = [
     { label: 'Features', href: '#features' },
@@ -164,6 +166,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                   <Link
                     to={link.href}
                     className={linkClasses}
+                    onMouseEnter={() => prefetch(link.href)}
+                    onFocus={() => prefetch(link.href)}
                   >
                     <motion.span {...linkProps} className="inline-block">
                       {link.label}
@@ -231,6 +235,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                   >
                     <Link
                       to="/dashboard"
+                      onMouseEnter={() => prefetch('/dashboard')}
+                      onFocus={() => prefetch('/dashboard')}
                       className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-all block shadow-sm"
                     >
                       Go to Dashboard
@@ -244,6 +250,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                     >
                       <Link
                         to="/login"
+                        onMouseEnter={() => prefetch('/login')}
+                        onFocus={() => prefetch('/login')}
                         className="text-sm font-medium text-muted-foreground hover:text-primary transition-colors"
                       >
                         Sign In
@@ -257,6 +265,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                     >
                       <Link
                         to="/signup"
+                        onMouseEnter={() => prefetch('/signup')}
+                        onFocus={() => prefetch('/signup')}
                         className="bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-all block shadow-sm"
                       >
                         Get Started
@@ -302,12 +312,16 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                     <div className="py-1">
                       <button
                         onClick={() => { navigate('/dashboard'); setDropdownOpen(false); }}
+                        onMouseEnter={() => prefetch('/dashboard')}
+                        onFocus={() => prefetch('/dashboard')}
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer"
                       >
                         Dashboard
                       </button>
                       <button
                         onClick={() => { navigate('/settings'); setDropdownOpen(false); }}
+                        onMouseEnter={() => prefetch('/settings')}
+                        onFocus={() => prefetch('/settings')}
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
                       >
                         <SettingsIcon className="w-4 h-4 text-muted-foreground" />
@@ -315,6 +329,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       </button>
                       <button
                         onClick={() => { navigate('/referral'); setDropdownOpen(false); }}
+                        onMouseEnter={() => prefetch('/referral')}
+                        onFocus={() => prefetch('/referral')}
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer"
                       >
                         <Gift className="w-4 h-4 text-muted-foreground" />
@@ -322,6 +338,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       </button>
                       <button
                         onClick={() => { navigate('/kyc'); setDropdownOpen(false); }}
+                        onMouseEnter={() => prefetch('/kyc')}
+                        onFocus={() => prefetch('/kyc')}
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors flex items-center justify-between cursor-pointer"
                       >
                         <span className="flex items-center gap-2">
@@ -332,6 +350,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       </button>
                       <button
                         onClick={() => { navigate('/cards'); setDropdownOpen(false); }}
+                        onMouseEnter={() => prefetch('/cards')}
+                        onFocus={() => prefetch('/cards')}
                         className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-secondary transition-colors cursor-pointer"
                       >
                         My Cards
@@ -341,6 +361,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       <div className="border-t border-border py-1">
                         <button
                           onClick={() => { navigate('/admin'); setDropdownOpen(false); }}
+                          onMouseEnter={() => prefetch('/admin')}
+                          onFocus={() => prefetch('/admin')}
                           className="w-full text-left px-4 py-2 text-sm text-destructive hover:bg-secondary transition-colors flex items-center gap-2 cursor-pointer font-semibold"
                         >
                           <LayoutDashboard className="w-4 h-4" />
@@ -442,6 +464,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                     <Link
                       to={link.href}
                       onClick={() => setMobileMenuOpen(false)}
+                      onMouseEnter={() => prefetch(link.href)}
+                      onFocus={() => prefetch(link.href)}
                       className={`text-base font-medium transition-colors block py-1 ${
                         isActive(link.href)
                           ? 'text-primary'
@@ -463,6 +487,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                     <Link
                       to="/dashboard"
                       onClick={() => setMobileMenuOpen(false)}
+                      onMouseEnter={() => prefetch('/dashboard')}
+                      onFocus={() => prefetch('/dashboard')}
                       className="text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-colors"
                     >
                       Go to Dashboard
@@ -472,6 +498,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       <Link
                         to="/login"
                         onClick={() => setMobileMenuOpen(false)}
+                        onMouseEnter={() => prefetch('/login')}
+                        onFocus={() => prefetch('/login')}
                         className="text-center text-sm font-medium text-muted-foreground hover:text-primary py-2 rounded-lg hover:bg-secondary transition-colors block"
                       >
                         Sign In
@@ -479,6 +507,8 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
                       <Link
                         to="/signup"
                         onClick={() => setMobileMenuOpen(false)}
+                        onMouseEnter={() => prefetch('/signup')}
+                        onFocus={() => prefetch('/signup')}
                         className="text-center bg-primary text-primary-foreground px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/95 transition-colors block"
                       >
                         Get Started
@@ -494,3 +524,5 @@ export default function Navigation({ isPublic = false }: NavigationProps) {
     </motion.nav>
   );
 }
+
+export default memo(Navigation);

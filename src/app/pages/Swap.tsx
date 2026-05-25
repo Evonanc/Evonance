@@ -51,8 +51,9 @@ export default function Swap() {
     getWallets(user.id).then(setWallets);
   }, [user]);
 
-  const getBalance = (symbol: string) =>
-    wallets.find(w => w.symbol === symbol)?.balance ?? 0;
+  const getBalance = useCallback((symbol: string) =>
+    wallets.find(w => w.symbol === symbol)?.balance ?? 0,
+  [wallets]);
 
   const tokens: Token[] = useMemo(() => {
     const staticTokens = [
@@ -95,7 +96,7 @@ export default function Swap() {
   const toToken = useMemo(() => tokens.find(t => t.symbol === toTokenSymbol) || tokens[0], [toTokenSymbol, tokens]);
 
   // Swap directional exchange
-  const handleSwapTokens = () => {
+  const handleSwapTokens = useCallback(() => {
     if (!shouldReduceMotion) {
       setSwapRotateTrigger(prev => !prev);
     }
@@ -103,7 +104,7 @@ export default function Swap() {
     setFromTokenSymbol(toTokenSymbol);
     setToTokenSymbol(temp);
     setFromAmount('');
-  };
+  }, [shouldReduceMotion, fromTokenSymbol, toTokenSymbol]);
 
   const calculatedToAmount = useMemo(() => {
     const amt = parseFloat(fromAmount);
@@ -124,7 +125,7 @@ export default function Swap() {
     return `1 ${fromToken.symbol} = ${ratio.toFixed(6)} ${toToken.symbol}`;
   }, [fromToken, toToken]);
 
-  const handleSwapNow = async (e: React.FormEvent) => {
+  const handleSwapNow = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) {
       toast.error('You must be logged in to swap tokens');
@@ -196,10 +197,21 @@ export default function Swap() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [
+    user,
+    fromAmount,
+    getBalance,
+    fromToken,
+    toToken,
+    calculatedToAmount,
+    dbWallets,
+    fromTokenSymbol,
+    toTokenSymbol,
+    loadWallets,
+  ]);
 
 
-  const selectToken = (symbol: string) => {
+  const selectToken = useCallback((symbol: string) => {
     if (selectorOpen === 'from') {
       if (symbol === toTokenSymbol) {
         setToTokenSymbol(fromTokenSymbol);
@@ -212,7 +224,7 @@ export default function Swap() {
       setToTokenSymbol(symbol);
     }
     setSelectorOpen(null);
-  };
+  }, [selectorOpen, fromTokenSymbol, toTokenSymbol]);
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

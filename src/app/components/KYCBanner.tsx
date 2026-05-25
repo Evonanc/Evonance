@@ -1,9 +1,9 @@
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Shield, X, ChevronRight } from 'lucide-react';
 import { useKYC } from '../hooks/useKYC';
-import { useState } from 'react';
 
-export default function KYCBanner() {
+function KYCBanner() {
   const navigate = useNavigate();
   const { status, level, limits } = useKYC();
   const [dismissed, setDismissed] = useState(false);
@@ -54,3 +54,5 @@ export default function KYCBanner() {
     </div>
   );
 }
+
+export default React.memo(KYCBanner);

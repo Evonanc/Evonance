@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
 import { useNotifications } from '../hooks/useNotifications';
 import {
@@ -33,7 +33,7 @@ function timeAgo(dateStr: string): string {
   });
 }
 
-export default function NotificationBell() {
+function NotificationBell() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -61,13 +61,13 @@ export default function NotificationBell() {
     ? notifications.filter(n => !n.read)
     : notifications;
 
-  const handleNotifClick = (notif: typeof notifications[0]) => {
+  const handleNotifClick = useCallback((notif: typeof notifications[0]) => {
     markAsRead(notif.id);
     if (notif.action_url) {
       navigate(notif.action_url);
       setOpen(false);
     }
-  };
+  }, [markAsRead, navigate]);
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -290,3 +290,5 @@ export default function NotificationBell() {
     </div>
   );
 }
+
+export default React.memo(NotificationBell);

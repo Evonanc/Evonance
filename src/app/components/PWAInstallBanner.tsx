@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePWA } from '../hooks/usePWA';
 import { X, Download } from 'lucide-react';
 import { toast } from 'sonner';
 
-export default function PWAInstallBanner() {
+function PWAInstallBanner() {
   const { canInstall, promptInstall } = usePWA();
   const [dismissed, setDismissed] = useState(false);
   const [installing, setInstalling] = useState(false);
@@ -89,3 +89,5 @@ export default function PWAInstallBanner() {
     </div>
   );
 }
+
+export default React.memo(PWAInstallBanner);

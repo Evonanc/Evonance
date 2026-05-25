@@ -1,10 +1,10 @@
+import React, { useState } from 'react';
 import { Link } from 'react-router';
-import { Gift, Users, Copy, Check, ChevronRight } from 'lucide-react';
+import { Gift, Copy, Check, ChevronRight } from 'lucide-react';
 import { useReferral } from '../hooks/useReferral';
-import { useState } from 'react';
 import { toast } from 'sonner';
 
-export default function ReferralCard() {
+function ReferralCard() {
   const { settings, statusCounts, referralLink, loading } = useReferral();
   const [copied, setCopied] = useState(false);
 
@@ -67,3 +67,5 @@ export default function ReferralCard() {
     </div>
   );
 }
+
+export default React.memo(ReferralCard);

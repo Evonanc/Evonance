@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { getKYC, KYC, KYC_LIMITS } from '../lib/db';
 
@@ -7,14 +7,26 @@ export function useKYC() {
   const [kyc, setKyc]       = useState<KYC | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     if (!user) {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       return;
     }
     const data = await getKYC(user.id);
-    setKyc(data);
-    setLoading(false);
+    if (isMountedRef.current) {
+      setKyc(data);
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => { load(); }, [load]);

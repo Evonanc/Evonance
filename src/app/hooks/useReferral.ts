@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
 import {
   getReferralSettings, getReferrals,
@@ -12,11 +12,21 @@ export function useReferral() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [loading, setLoading]     = useState(true);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     if (authLoading) return;
     if (!user) {
       console.log('[useReferral] No authenticated user found. Setting loading to false.');
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
       return;
     }
     console.log('[useReferral] Fetching referral data for user:', user.id);
@@ -26,12 +36,16 @@ export function useReferral() {
         getReferrals(user.id),
       ]);
       console.log('[useReferral] Loaded settings:', s, 'and referrals:', r);
-      setSettings(s);
-      setReferrals(r);
+      if (isMountedRef.current) {
+        setSettings(s);
+        setReferrals(r);
+      }
     } catch (err) {
       console.error('[useReferral] Error fetching referral data:', err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [user, authLoading]);
 

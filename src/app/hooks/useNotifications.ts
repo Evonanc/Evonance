@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './useAuth';
 import { supabase } from '../lib/supabase';
 import {
@@ -14,6 +14,14 @@ export function useNotifications() {
   const [unreadCount, setUnreadCount]     = useState(0);
   const [loading, setLoading]             = useState(true);
 
+  const isMountedRef = useRef(true);
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const load = useCallback(async () => {
     if (!user) return;
     try {
@@ -21,12 +29,16 @@ export function useNotifications() {
         getNotifications(user.id),
         getUnreadCount(user.id),
       ]);
-      setNotifications(notifs);
-      setUnreadCount(count);
+      if (isMountedRef.current) {
+        setNotifications(notifs);
+        setUnreadCount(count);
+      }
     } catch (err) {
       console.error('Notifications load error:', err);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   }, [user]);
 
@@ -49,8 +61,10 @@ export function useNotifications() {
         },
         (payload) => {
           const newNotif = payload.new as Notification;
-          setNotifications(prev => [newNotif, ...prev]);
-          setUnreadCount(prev => prev + 1);
+          if (isMountedRef.current) {
+            setNotifications(prev => [newNotif, ...prev]);
+            setUnreadCount(prev => prev + 1);
+          }
           // Browser notification if permission granted
           if (typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'granted') {
             new window.Notification(newNotif.title, {
@@ -68,34 +82,42 @@ export function useNotifications() {
   const handleMarkAsRead = async (id: string) => {
     if (!user) return;
     await markAsRead(user.id, id);
-    setNotifications(prev =>
-      prev.map(n => n.id === id ? { ...n, read: true } : n)
-    );
-    setUnreadCount(prev => Math.max(0, prev - 1));
+    if (isMountedRef.current) {
+      setNotifications(prev =>
+        prev.map(n => n.id === id ? { ...n, read: true } : n)
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    }
   };
 
   const handleMarkAllAsRead = async () => {
     if (!user) return;
     await markAllAsRead(user.id);
-    setNotifications(prev => prev.map(n => ({ ...n, read: true })));
-    setUnreadCount(0);
+    if (isMountedRef.current) {
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!user) return;
     const notif = notifications.find(n => n.id === id);
     await deleteNotification(user.id, id);
-    setNotifications(prev => prev.filter(n => n.id !== id));
-    if (notif && !notif.read) {
-      setUnreadCount(prev => Math.max(0, prev - 1));
+    if (isMountedRef.current) {
+      setNotifications(prev => prev.filter(n => n.id !== id));
+      if (notif && !notif.read) {
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
     }
   };
 
   const handleClearAll = async () => {
     if (!user) return;
     await clearAllNotifications(user.id);
-    setNotifications([]);
-    setUnreadCount(0);
+    if (isMountedRef.current) {
+      setNotifications([]);
+      setUnreadCount(0);
+    }
   };
 
   return {
