@@ -7,6 +7,7 @@ import { motion, useReducedMotion } from 'motion/react';
 import { fadeUp, fadeIn, slideInRight, staggerContainer } from '../lib/animations';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
+import { sendWelcomeEmail } from '../lib/email';
 
 export default function Signup() {
   const { theme, setTheme } = useTheme();
@@ -108,6 +109,10 @@ export default function Signup() {
         },
       });
       if (error) throw error;
+      sendWelcomeEmail(email.trim(), {
+        firstName,
+        email: email.trim(),
+      }).catch(console.warn);
       setStep(2); // Move to email verification step
     } catch (err: any) {
       toast.error(err.message ?? 'Signup failed. Please try again.');

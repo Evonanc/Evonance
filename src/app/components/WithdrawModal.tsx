@@ -3,6 +3,7 @@ import * as Dialog from '@radix-ui/react-dialog';
 import { X, AlertCircle, ChevronDown } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { withdrawFunds, getWallet, createNotification } from '../lib/db';
+import { sendWithdrawalProcessed } from '../lib/email';
 import { toast } from 'sonner';
 
 interface Props {
@@ -55,6 +56,14 @@ export default function WithdrawModal({ open, onClose, onSuccess }: Props) {
         `$${amountNum.toFixed(2)} withdrawal to ${address.slice(0,8)}... is being processed.`,
         '/dashboard'
       ).catch(console.error);
+      sendWithdrawalProcessed(user.email!, {
+        firstName: user.user_metadata?.first_name ?? 'Trader',
+        amount: amountNum,
+        symbol: 'USDT',
+        address,
+        fee,
+        network: network.name,
+      }).catch(console.warn);
       toast.success(`$${amountNum} withdrawal submitted`);
       setAddress('');
       setAmount('');

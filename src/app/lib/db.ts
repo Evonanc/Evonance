@@ -815,6 +815,34 @@ export async function creditReferralReward(
     `Keep sharing to earn more.`,
     '/referral'
   );
+
+  // Send referral reward email
+  (async () => {
+    try {
+      const { data: referrer } = await supabase
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', userId)
+        .single();
+      if (referrer?.email) {
+        const { data: refData } = await supabase
+          .from('referrals')
+          .select('referred_email, referred_user_id')
+          .eq('id', referralId)
+          .single();
+        const friendEmail = refData?.referred_email ?? 'your friend';
+        const { sendReferralReward } = await import('./email');
+        await sendReferralReward(referrer.email, {
+          firstName: referrer.full_name?.split(' ')[0] ?? 'Trader',
+          rewardAmount: amount,
+          referredEmail: friendEmail,
+          totalEarned: (settings?.total_earned ?? 0) + amount,
+        });
+      }
+    } catch (err) {
+      console.warn('[Referral Email] Failed to send email:', err);
+    }
+  })();
 }
 
 

@@ -8,6 +8,7 @@ import { fadeUp, fadeIn, slideInRight, staggerContainer } from '../lib/animation
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { getMFAFactors, getAssuranceLevel } from '../lib/mfa';
+import { sendLoginAlert } from '../lib/email';
 
 export default function Login() {
   const { theme, setTheme } = useTheme();
@@ -39,11 +40,20 @@ export default function Login() {
     }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim(),
         password,
       });
       if (error) throw error;
+
+      if (data?.user) {
+        sendLoginAlert(data.user.email!, {
+          firstName: data.user.user_metadata?.first_name ?? 'User',
+          device: navigator.userAgent.split(') ')[0]?.split(' (')[1]?.replace('; dnt', '') ?? 'Unknown Device',
+          location: 'Web Session',
+          time: new Date().toLocaleString(),
+        }).catch(console.warn);
+      }
 
       // Check if user has 2FA enabled
       const factors = await getMFAFactors();

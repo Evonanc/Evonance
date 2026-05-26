@@ -15,6 +15,7 @@ import { formatPrice, formatVolume } from '../lib/crypto';
 import LiveIndicator from '../components/LiveIndicator';
 import { useAuth } from '../hooks/useAuth';
 import { buyCrypto, sellCrypto, getWallets, Wallet, getTransactions, Transaction, createNotification } from '../lib/db';
+import { sendTradeConfirmation } from '../lib/email';
 
 interface Pair {
   symbol: string;
@@ -298,6 +299,15 @@ export default function Trade() {
           '/trade',
           { symbol: baseSymbol, amount: amountNum, price: effectivePrice || currentPrice }
         ).catch(console.error);
+        sendTradeConfirmation(user.email!, {
+          firstName: user.user_metadata?.first_name ?? 'Trader',
+          type: 'buy',
+          symbol: baseSymbol,
+          amount: amountNum,
+          price: effectivePrice || currentPrice,
+          total: totalNum,
+          fee: feeNum,
+        }).catch(console.warn);
         toast.success(
           `Bought ${amountNum.toFixed(6)} ${baseSymbol} ` +
           `for $${totalNum.toFixed(2)}`
@@ -325,6 +335,15 @@ export default function Trade() {
           '/trade',
           { symbol: baseSymbol, amount: amountNum, price: effectivePrice || currentPrice }
         ).catch(console.error);
+        sendTradeConfirmation(user.email!, {
+          firstName: user.user_metadata?.first_name ?? 'Trader',
+          type: 'sell',
+          symbol: baseSymbol,
+          amount: amountNum,
+          price: effectivePrice || currentPrice,
+          total: totalNum,
+          fee: feeNum,
+        }).catch(console.warn);
         toast.success(
           `Sold ${amountNum.toFixed(6)} ${baseSymbol} ` +
           `for $${(totalNum - feeNum).toFixed(2)}`

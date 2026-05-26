@@ -243,6 +243,29 @@ export async function updateKYCStatus(
       ? 'Your KYC verification has been approved. Your account limits have been upgraded.'
       : `Your KYC verification was rejected: ${rejectionReason ?? 'Please resubmit with clearer documents.'}`
   );
+
+  // Send KYC transactional email
+  (async () => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('email, full_name')
+        .eq('id', userId)
+        .single();
+      if (profile?.email) {
+        const { sendKYCStatus } = await import('./email');
+        await sendKYCStatus(profile.email, {
+          firstName: profile.full_name?.split(' ')[0] ?? 'Trader',
+          status: status === 'verified' ? 'approved' : 'rejected',
+          level,
+          rejectionReason,
+          dailyLimit: level === 1 ? 5000 : level === 2 ? 25000 : 50000,
+        });
+      }
+    } catch (err) {
+      console.warn('[KYC Email] Failed to send email:', err);
+    }
+  })();
 }
 
 // ── Audit log ─────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import Navigation from '../components/Navigation';
+import ContactModal from '../components/ContactModal';
 import {
   Search, Rocket, TrendingUp, Wallet,
   CreditCard, Shield, UserCheck,
@@ -23,6 +24,7 @@ export default function HelpCenter() {
   const [query, setQuery]           = useState('');
   const [results, setResults]       = useState<HelpArticle[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [contactOpen, setContactOpen] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
   
   const popular = getPopularArticles();
@@ -343,7 +345,7 @@ export default function HelpCenter() {
                 title: 'Live Chat',
                 desc: 'Chat with our support team in real time',
                 cta: 'Start chat',
-                action: () => toast.info('Live chat coming soon'),
+                action: () => setContactOpen(true),
                 color: 'text-primary bg-primary/10',
               },
               {
@@ -351,7 +353,7 @@ export default function HelpCenter() {
                 title: 'Email Support',
                 desc: 'We respond within 24 hours on business days',
                 cta: 'Send email',
-                action: () => window.open('mailto:support@evonance.com'),
+                action: () => setContactOpen(true),
                 color: 'text-success bg-success/10',
               },
               {
@@ -380,6 +382,7 @@ export default function HelpCenter() {
           </div>
         </section>
       </div>
+      <ContactModal open={contactOpen} onClose={() => setContactOpen(false)} />
     </div>
   );
 }

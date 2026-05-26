@@ -2,7 +2,8 @@ import { useState } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import { X, Copy, CheckCircle, AlertCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { depositFunds, createNotification } from '../lib/db';
+import { depositFunds, createNotification, getWallets } from '../lib/db';
+import { sendDepositConfirmed } from '../lib/email';
 import { toast } from 'sonner';
 
 interface Props {
@@ -77,6 +78,24 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
         `$${amt.toFixed(2)} USDT has been credited to your wallet.`,
         '/dashboard'
       ).catch(console.error);
+      getWallets(user.id).then(wallets => {
+        const usdtWallet = wallets.find(w => w.symbol === 'USDT');
+        sendDepositConfirmed(user.email!, {
+          firstName: user.user_metadata?.first_name ?? 'Trader',
+          amount: amt,
+          symbol: 'USDT',
+          network: network.name,
+          newBalance: usdtWallet ? usdtWallet.balance : amt,
+        }).catch(console.warn);
+      }).catch(() => {
+        sendDepositConfirmed(user.email!, {
+          firstName: user.user_metadata?.first_name ?? 'Trader',
+          amount: amt,
+          symbol: 'USDT',
+          network: network.name,
+          newBalance: amt,
+        }).catch(console.warn);
+      });
       toast.success(`$${amt} deposited successfully`);
       setStep('select');
       setAmount('');

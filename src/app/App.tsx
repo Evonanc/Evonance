@@ -1,8 +1,43 @@
+/*
+  DEPLOY SUPABASE EDGE FUNCTION:
+  ────────────────────────────────
+  Run these commands once from your project root:
+
+  1. Install Supabase CLI:
+     npm install -g supabase
+
+  2. Login to Supabase:
+     supabase login
+
+  3. Link to your project:
+     supabase link --project-ref YOUR_PROJECT_REF
+     (Find project ref in Supabase Dashboard → Settings → General)
+
+  4. Set Resend API key as secret:
+     supabase secrets set RESEND_API_KEY=re_xxxxxxxxxxxx
+     supabase secrets set FROM_EMAIL=noreply@yourdomain.com
+
+  5. Deploy the edge function:
+     supabase functions deploy send-email
+
+  6. Test it works:
+     supabase functions invoke send-email --body '{
+       "type": "welcome",
+       "to": "test@example.com",
+       "data": { "firstName": "Test", "email": "test@example.com" }
+     }'
+
+  The edge function URL will be:
+  https://YOUR_PROJECT_REF.supabase.co/functions/v1/send-email
+  This is already used in src/app/lib/email.ts via VITE_SUPABASE_URL
+*/
+
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+
 
 // Components & Helpers
 import ProtectedRoute from './components/ProtectedRoute';
