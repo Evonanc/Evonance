@@ -1,49 +1,33 @@
 import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, Copy, CheckCircle, ChevronDown } from 'lucide-react';
+import { X, Copy, Mail, AtSign } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { getWallets, Wallet } from '../lib/db';
+import { getInternalTransfers, InternalTransfer } from '../lib/db';
+import { toast } from 'sonner';
 
 interface Props {
   open: boolean;
   onClose: () => void;
-  defaultSymbol?: string;
 }
 
-// Mock receive addresses per asset
-const RECEIVE_ADDRESSES: Record<string, string> = {
-  BTC:  '1EvonanceBTCAddressxxxxxxxxxxxxxxx',
-  ETH:  '0xEvonanceETHAddressxxxxxxxxxxxxxxx',
-  SOL:  'EvonanceSOLAddressxxxxxxxxxxxxxxxx',
-  BNB:  '0xEvonanceBNBAddressxxxxxxxxxxxxxxx',
-  USDT: 'TEvonanceUSDTAddressxxxxxxxxxxxxxx',
-  USDC: '0xEvonanceUSDCAddressxxxxxxxxxxxxxxx',
-  XRP:  'rEvonanceXRPAddressxxxxxxxxxxxxxxx',
-  ADA:  'addr1EvonanceADAAddressxxxxxxxxxxxx',
-};
-
-export default function ReceiveModal({ open, onClose, defaultSymbol = 'BTC' }: Props) {
+export default function ReceiveModal({ open, onClose }: Props) {
   const { user } = useAuth();
-  const [wallets, setWallets] = useState<Wallet[]>([]);
-  const [selectedSymbol, setSelectedSymbol] = useState(defaultSymbol);
-  const [copied, setCopied] = useState(false);
+  const [recentReceived, setRecentReceived] = useState<InternalTransfer[]>([]);
 
   useEffect(() => {
     if (user && open) {
-      getWallets(user.id).then(setWallets);
+      getInternalTransfers(user.id)
+        .then(transfers => {
+          setRecentReceived(transfers.filter(t => t.receiver_id === user.id));
+        })
+        .catch(console.error);
     }
   }, [user, open]);
 
-  const address = RECEIVE_ADDRESSES[selectedSymbol]
-    ?? `Evonance${selectedSymbol}Addressxxxxxxxxxxxxxxxxxx`;
+  const userEmail = user?.email ?? '';
+  const username = user?.user_metadata?.username ?? userEmail.split('@')[0];
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(address);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  // Generate simple QR code pattern using SVG grid
+  // Generate simple QR code pattern using SVG grid based on email
   const generateQRPattern = (text: string) => {
     const size = 21;
     const cells: boolean[][] = [];
@@ -69,7 +53,7 @@ export default function ReceiveModal({ open, onClose, defaultSymbol = 'BTC' }: P
     return cells;
   };
 
-  const qrCells = generateQRPattern(address);
+  const qrCells = generateQRPattern(userEmail);
   const cellSize = 8;
   const qrSize = 21 * cellSize;
 
@@ -84,10 +68,10 @@ export default function ReceiveModal({ open, onClose, defaultSymbol = 'BTC' }: P
           <div className="flex items-center justify-between mb-6">
             <div>
               <Dialog.Title className="text-xl font-bold text-foreground">
-                Receive Crypto
+                Receive P2P
               </Dialog.Title>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                Share your address to receive funds
+              <p className="text-sm text-muted-foreground mt-0.5 font-semibold">
+                Receive instant fee-free internal transfers
               </p>
             </div>
             <button onClick={onClose}
@@ -97,31 +81,48 @@ export default function ReceiveModal({ open, onClose, defaultSymbol = 'BTC' }: P
           </div>
 
           <div className="space-y-4">
-            {/* Asset selector */}
-            <div>
-              <label className="text-sm font-medium text-foreground block mb-1.5 font-semibold">
-                Asset
-              </label>
-              <div className="relative font-semibold">
-                <select
-                  value={selectedSymbol}
-                  onChange={e => setSelectedSymbol(e.target.value)}
-                  className="w-full appearance-none bg-input-background border
-                    border-input rounded-lg px-4 py-3 text-foreground
-                    focus:outline-none focus:border-primary focus:ring-2
-                    focus:ring-primary/20 transition-all font-semibold">
-                  {wallets.map(w => (
-                    <option key={w.symbol} value={w.symbol}>{w.symbol} — {w.name}</option>
-                  ))}
-                  {Object.keys(RECEIVE_ADDRESSES)
-                    .filter(s => !wallets.find(w => w.symbol === s))
-                    .map(s => (
-                      <option key={s} value={s}>{s}</option>
-                    ))
-                  }
-                </select>
-                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2
-                  w-4 h-4 text-muted-foreground pointer-events-none" />
+            {/* Identity details box */}
+            <div className="bg-secondary rounded-xl p-4 space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                Your EVONANCE identity
+              </p>
+
+              {/* Email */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm text-foreground font-semibold">
+                    {userEmail}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(userEmail);
+                    toast.success('Email copied!');
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline transition-colors font-semibold cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy
+                </button>
+              </div>
+
+              {/* Username */}
+              <div className="flex items-center justify-between border-t border-border/50 pt-2.5">
+                <div className="flex items-center gap-2">
+                  <AtSign className="w-4 h-4 text-muted-foreground" />
+                  <p className="text-sm text-foreground font-semibold">
+                    @{username}
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`@${username}`);
+                    toast.success('Username copied!');
+                  }}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline transition-colors font-semibold cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy
+                </button>
               </div>
             </div>
 
@@ -169,45 +170,38 @@ export default function ReceiveModal({ open, onClose, defaultSymbol = 'BTC' }: P
               </svg>
             </div>
 
-            {/* Address */}
-            <div className="bg-secondary rounded-xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                  {selectedSymbol} Address
-                </p>
-                <button onClick={handleCopy}
-                  className="flex items-center gap-1.5 text-xs text-primary
-                    hover:underline transition-colors font-semibold cursor-pointer">
-                  {copied
-                    ? <><CheckCircle className="w-3.5 h-3.5 text-success" />
-                        <span className="text-success font-semibold">Copied!</span></>
-                    : <><Copy className="w-3.5 h-3.5" /> Copy</>
-                  }
-                </button>
-              </div>
-              <p className="font-mono text-sm text-foreground break-all leading-relaxed">
-                {address}
-              </p>
-            </div>
-
-            {/* Info pills */}
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: 'Asset', value: selectedSymbol },
-                { label: 'Network', value: selectedSymbol === 'USDT' ? 'TRC-20' : selectedSymbol },
-                { label: 'Min deposit', value: '$10' },
-              ].map(({ label, value }) => (
-                <div key={label} className="bg-secondary rounded-lg p-2.5 text-center">
-                  <p className="text-xs text-muted-foreground">{label}</p>
-                  <p className="text-sm font-semibold text-foreground mt-0.5">{value}</p>
-                </div>
-              ))}
-            </div>
-
+            {/* Info warning */}
             <p className="text-xs text-muted-foreground text-center leading-relaxed font-semibold">
-              Only send <strong className="text-foreground">{selectedSymbol}</strong> to
-              this address. Sending other assets may result in permanent loss of funds.
+              Share your email or username with the sender.
+              They must be an <strong className="text-foreground">
+              EVONANCE user</strong> to send you funds.
+              Transfers are instant and fee-free.
             </p>
+
+            {/* Recent received transfers */}
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Recent received
+              </p>
+              {recentReceived.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-3">
+                  No transfers received yet
+                </p>
+              ) : (
+                recentReceived.slice(0,3).map(t => (
+                  <div key={t.id}
+                    className="flex items-center justify-between py-2
+                      border-b border-border last:border-0">
+                    <p className="text-sm text-foreground font-semibold">
+                      +{t.amount.toFixed(6)} {t.symbol}
+                    </p>
+                    <p className="text-xs text-muted-foreground font-semibold">
+                      {new Date(t.created_at).toLocaleDateString()}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

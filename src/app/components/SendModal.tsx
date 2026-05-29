@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, AlertCircle, ChevronDown, ArrowUpRight } from 'lucide-react';
+import { X, AlertCircle, ChevronDown, ArrowUpRight, CheckCircle, Info } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { sendCrypto, getWallets, Wallet, createNotification } from '../lib/db';
+import { findTransferRecipient, sendInternalTransfer, getWallets, Wallet, createNotification, TransferRecipient } from '../lib/db';
 import { useCryptoData } from '../hooks/useCryptoData';
 import { toast } from 'sonner';
 
@@ -18,8 +18,12 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
   const { coins } = useCryptoData();
   const [wallets, setWallets] = useState<Wallet[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState(defaultSymbol);
-  const [toAddress, setToAddress] = useState('');
+  const [recipientQuery, setRecipientQuery] = useState('');
+  const [recipient, setRecipient] = useState<TransferRecipient | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [amount, setAmount] = useState('');
+  const [note, setNote] = useState('');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState<'form' | 'confirm'>('form');
 
@@ -33,40 +37,83 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
   const selectedCoin = coins.find(c => c.symbol === selectedSymbol);
   const currentPrice = selectedCoin?.price ?? selectedWallet?.avg_buy_price ?? 0;
   const amountNum = parseFloat(amount) || 0;
-  const fee = parseFloat((amountNum * 0.001).toFixed(6));
-  const total = amountNum + fee;
-  const usdValue = amountNum * currentPrice;
   const balance = selectedWallet?.balance ?? 0;
-  const canProceed = toAddress.length > 10 && amountNum > 0 && total <= balance;
+  const usdValue = amountNum * currentPrice;
+
+  const canProceed = !!recipient && amountNum > 0 && amountNum <= balance;
 
   const handleMax = () => {
-    const maxAmount = Math.max(0, balance - fee);
-    setAmount(maxAmount.toFixed(6));
+    setAmount(balance.toFixed(6));
   };
 
   const handleClose = () => {
     setStep('form');
-    setToAddress('');
+    setRecipientQuery('');
+    setRecipient(null);
+    setNotFound(false);
     setAmount('');
+    setNote('');
     onClose();
   };
 
+  const handleLookup = async () => {
+    if (!recipientQuery.trim()) return;
+    setLookingUp(true);
+    setNotFound(false);
+    setRecipient(null);
+    try {
+      const result = await findTransferRecipient(recipientQuery);
+      if (!result) {
+        setNotFound(true);
+      } else if (result.id === user?.id) {
+        toast.error('You cannot send to yourself');
+      } else {
+        setRecipient(result);
+      }
+    } catch (err: any) {
+      toast.error('Lookup failed');
+    } finally {
+      setLookingUp(false);
+    }
+  };
+
   const handleSend = async () => {
-    if (!user || !canProceed) return;
+    if (!user || !recipient || !canProceed) return;
     setLoading(true);
     try {
-      await sendCrypto(user.id, selectedSymbol, amountNum, toAddress, currentPrice);
-      createNotification(
+      const coin = coins.find(c => c.symbol === selectedSymbol);
+      await sendInternalTransfer(
+        user.id,
+        recipient.id,
+        selectedSymbol,
+        coin?.name ?? selectedSymbol,
+        amountNum,
+        coin?.price ?? 0,
+        note || undefined
+      );
+
+      // Notify both parties
+      await createNotification(
         user.id, 'send',
-        `${amountNum.toFixed(6)} ${selectedSymbol} sent`,
-        `Successfully sent to ${toAddress.slice(0,8)}...${toAddress.slice(-4)}`,
+        `Sent ${amountNum.toFixed(6)} ${selectedSymbol}`,
+        `Successfully sent to ${recipient.full_name || recipient.email} on EVONANCE.`,
         '/dashboard'
-      ).catch(console.error);
-      toast.success(`${amountNum} ${selectedSymbol} sent successfully`);
-      onSuccess?.();
+      );
+      await createNotification(
+        recipient.id, 'receive',
+        `You received ${amountNum.toFixed(6)} ${selectedSymbol}`,
+        `${user.user_metadata?.full_name ?? 'A user'} sent you ${amountNum.toFixed(6)} ${selectedSymbol} on EVONANCE.${note ? ` Note: "${note}"` : ''}`,
+        '/dashboard'
+      );
+
+      toast.success(
+        `${amountNum.toFixed(6)} ${selectedSymbol} sent to ` +
+        `${recipient.full_name || recipient.email}`
+      );
       handleClose();
+      onSuccess?.();
     } catch (err: any) {
-      toast.error(err.message ?? 'Send failed');
+      toast.error(err.message ?? 'Transfer failed');
     } finally {
       setLoading(false);
     }
@@ -83,10 +130,10 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
           <div className="flex items-center justify-between mb-6">
             <div>
               <Dialog.Title className="text-xl font-bold text-foreground">
-                Send Crypto
+                Send P2P
               </Dialog.Title>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Transfer to any wallet address
+                Instant, zero-fee internal transfers
               </p>
             </div>
             <button onClick={handleClose}
@@ -99,12 +146,13 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
             <div className="space-y-4">
 
               {/* Warning */}
-              <div className="flex gap-3 p-3 bg-destructive/10 border
-                border-destructive/20 rounded-xl">
-                <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-destructive leading-relaxed font-semibold">
-                  Transactions are irreversible. Verify the address carefully
-                  before sending.
+              <div className="flex gap-3 p-3 bg-primary/5 border
+                border-primary/20 rounded-xl">
+                <Info className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-primary leading-relaxed font-semibold">
+                  This is an <strong>internal EVONANCE transfer</strong>.
+                  Funds move instantly between accounts with zero fees.
+                  The recipient must have an EVONANCE account.
                 </p>
               </div>
 
@@ -132,21 +180,75 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                 </div>
               </div>
 
-              {/* To address */}
+              {/* Recipient lookup */}
               <div>
                 <label className="text-sm font-medium text-foreground block mb-1.5 font-semibold">
-                  Recipient address
+                  Recipient email or @username
                 </label>
-                <input
-                  type="text"
-                  value={toAddress}
-                  onChange={e => setToAddress(e.target.value)}
-                  placeholder="Enter wallet address"
-                  className="w-full bg-input-background border border-input rounded-lg
-                    px-4 py-3 text-foreground placeholder:text-muted-foreground
-                    focus:outline-none focus:border-primary focus:ring-2
-                    focus:ring-primary/20 transition-all font-mono text-sm"
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={recipientQuery}
+                    onChange={e => {
+                      setRecipientQuery(e.target.value);
+                      setRecipient(null);
+                      setNotFound(false);
+                    }}
+                    onKeyDown={e => e.key === 'Enter' && handleLookup()}
+                    placeholder="email@example.com or @username"
+                    className="flex-1 bg-input-background border border-input
+                      rounded-lg px-4 py-3 text-foreground text-sm
+                      placeholder:text-muted-foreground focus:outline-none
+                      focus:border-primary focus:ring-2 focus:ring-primary/20
+                      transition-all font-semibold"
+                  />
+                  <button
+                    onClick={handleLookup}
+                    disabled={lookingUp || !recipientQuery.trim()}
+                    className="bg-primary text-primary-foreground rounded-lg
+                      px-4 py-3 text-sm font-semibold hover:opacity-90
+                      transition-opacity disabled:opacity-50 flex-shrink-0 cursor-pointer"
+                  >
+                    {lookingUp ? (
+                      <div className="w-4 h-4 border-2 border-white/30
+                        border-t-white rounded-full animate-spin" />
+                    ) : 'Find'}
+                  </button>
+                </div>
+
+                {/* Recipient found */}
+                {recipient && (
+                  <div className="flex items-center gap-3 mt-3 p-3
+                    bg-success/5 border border-success/20 rounded-xl">
+                    <div className="w-10 h-10 rounded-full bg-primary flex
+                      items-center justify-center text-primary-foreground
+                      font-bold text-sm flex-shrink-0">
+                      {(recipient.full_name?.[0] ??
+                        recipient.email[0]).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-foreground">
+                        {recipient.full_name || recipient.username}
+                      </p>
+                      <p className="text-xs text-muted-foreground truncate font-semibold">
+                        {recipient.email} · @{recipient.username}
+                      </p>
+                    </div>
+                    <CheckCircle className="w-5 h-5 text-success flex-shrink-0" />
+                  </div>
+                )}
+
+                {/* Not found */}
+                {notFound && (
+                  <div className="flex items-center gap-2 mt-2 p-3
+                    bg-destructive/5 border border-destructive/20 rounded-xl">
+                    <AlertCircle className="w-4 h-4 text-destructive flex-shrink-0" />
+                    <p className="text-xs text-destructive font-semibold">
+                      No EVONANCE user found with that email or username.
+                      They must have an account to receive funds.
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* Amount */}
@@ -174,7 +276,7 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                     className="w-full bg-input-background border border-input rounded-lg
                       px-4 pr-20 py-3 text-foreground placeholder:text-muted-foreground
                       focus:outline-none focus:border-primary focus:ring-2
-                      focus:ring-primary/20 transition-all"
+                      focus:ring-primary/20 transition-all font-semibold"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2
                     text-sm font-medium text-muted-foreground font-semibold">
@@ -188,30 +290,49 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                 )}
               </div>
 
+              {/* Note field */}
+              <div>
+                <label className="text-sm font-medium text-foreground block mb-1.5 font-semibold font-semibold">
+                  Note <span className="text-muted-foreground font-normal ml-1">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={note}
+                  onChange={e => setNote(e.target.value)}
+                  placeholder="e.g. Thanks for lunch!"
+                  maxLength={100}
+                  className="w-full bg-input-background border border-input
+                    rounded-lg px-4 py-3 text-foreground text-sm
+                    placeholder:text-muted-foreground focus:outline-none
+                    focus:border-primary focus:ring-2 focus:ring-primary/20
+                    transition-all font-semibold"
+                />
+              </div>
+
               {/* Fee summary */}
               {amountNum > 0 && (
                 <div className="bg-secondary rounded-xl p-4 space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Amount</span>
-                    <span className="font-semibold text-foreground">
+                    <span className="text-muted-foreground font-semibold">Amount</span>
+                    <span className="font-semibold text-foreground font-mono">
                       {amountNum.toFixed(6)} {selectedSymbol}
                     </span>
                   </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Network fee (0.1%)</span>
-                    <span className="font-semibold text-foreground">
-                      {fee.toFixed(6)} {selectedSymbol}
+                  <div className="flex justify-between text-sm font-semibold">
+                    <span className="text-muted-foreground">Fee</span>
+                    <span className="font-bold text-success">
+                      Free (Zero Fees)
                     </span>
                   </div>
-                  <div className="border-t border-border pt-2 flex justify-between text-sm">
-                    <span className="font-semibold text-foreground">Total deducted</span>
-                    <span className={`font-bold ${
-                      total > balance ? 'text-destructive' : 'text-foreground'
+                  <div className="border-t border-border pt-2 flex justify-between text-sm font-semibold">
+                    <span className="font-bold text-foreground font-semibold">Total deducted</span>
+                    <span className={`font-bold font-mono ${
+                      amountNum > balance ? 'text-destructive' : 'text-foreground'
                     }`}>
-                      {total.toFixed(6)} {selectedSymbol}
+                      {amountNum.toFixed(6)} {selectedSymbol}
                     </span>
                   </div>
-                  {total > balance && (
+                  {amountNum > balance && (
                     <p className="text-xs text-destructive font-semibold">Insufficient balance</p>
                   )}
                 </div>
@@ -222,7 +343,8 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                 disabled={!canProceed}
                 className="w-full bg-primary text-primary-foreground rounded-xl py-3
                   font-semibold hover:opacity-90 transition-opacity cursor-pointer
-                  disabled:opacity-50 disabled:cursor-not-allowed">
+                  disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Review Transaction
               </button>
             </div>
@@ -235,15 +357,15 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                   justify-center mx-auto mb-3">
                   <ArrowUpRight className="w-7 h-7 text-primary" />
                 </div>
-                <h3 className="text-lg font-bold text-foreground">Confirm Send</h3>
+                <h3 className="text-lg font-bold text-foreground">Confirm Transfer</h3>
                 <p className="text-sm text-muted-foreground">
-                  Review details before confirming
+                  Review transfer details before confirming
                 </p>
               </div>
 
               <div className="bg-secondary rounded-xl p-4 space-y-3">
                 <div>
-                  <p className="text-xs text-muted-foreground mb-1">Sending</p>
+                  <p className="text-xs text-muted-foreground mb-1 font-semibold">Sending</p>
                   <p className="text-2xl font-bold text-foreground font-mono">
                     {amountNum.toFixed(6)} {selectedSymbol}
                   </p>
@@ -252,15 +374,23 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                   </p>
                 </div>
                 <div className="border-t border-border pt-3">
-                  <p className="text-xs text-muted-foreground mb-1">To address</p>
-                  <p className="font-mono text-sm text-foreground break-all">
-                    {toAddress}
+                  <p className="text-xs text-muted-foreground mb-1 font-semibold">Recipient</p>
+                  <p className="font-mono text-sm text-foreground break-all font-semibold">
+                    {recipient?.full_name || recipient?.username} ({recipient?.email})
                   </p>
                 </div>
-                <div className="border-t border-border pt-3 flex justify-between text-sm">
-                  <span className="text-muted-foreground">Network fee</span>
-                  <span className="text-foreground font-mono font-semibold">
-                    {fee.toFixed(6)} {selectedSymbol}
+                {note && (
+                  <div className="border-t border-border pt-3 font-semibold">
+                    <p className="text-xs text-muted-foreground mb-1">Note</p>
+                    <p className="text-sm text-foreground italic font-semibold">
+                      "{note}"
+                    </p>
+                  </div>
+                )}
+                <div className="border-t border-border pt-3 flex justify-between text-sm font-semibold">
+                  <span className="text-muted-foreground">Transfer fee</span>
+                  <span className="text-success font-semibold">
+                    Free
                   </span>
                 </div>
               </div>
@@ -269,22 +399,24 @@ export default function SendModal({ open, onClose, onSuccess, defaultSymbol = 'B
                 <button
                   onClick={() => setStep('form')}
                   className="w-full border border-border bg-background text-foreground
-                    rounded-xl py-3 font-semibold hover:bg-secondary transition-colors cursor-pointer">
+                    rounded-xl py-3 font-semibold hover:bg-secondary transition-colors cursor-pointer"
+                >
                   Back
                 </button>
                 <button
                   onClick={handleSend}
                   disabled={loading}
-                  className="w-full bg-destructive text-destructive-foreground
+                  className="w-full bg-primary text-primary-foreground
                     rounded-xl py-3 font-semibold hover:opacity-90 transition-opacity cursor-pointer
-                    disabled:opacity-50 disabled:cursor-not-allowed">
+                    disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   {loading ? (
                     <span className="flex items-center justify-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/30
                         border-t-white rounded-full animate-spin" />
                       Sending...
                     </span>
-                  ) : 'Confirm Send'}
+                  ) : 'Confirm Transfer'}
                 </button>
               </div>
             </div>

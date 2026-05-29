@@ -1027,6 +1027,141 @@ export async function getUserDeposits(
   return data ?? [];
 }
 
+// ── Internal Transfers (Peer-to-Peer) ─────────────────────────────
+
+export interface InternalTransfer {
+  id: string;
+  sender_id: string;
+  receiver_id: string;
+  symbol: string;
+  amount: number;
+  note?: string;
+  status: 'completed' | 'reversed';
+  created_at: string;
+}
+
+export interface TransferRecipient {
+  id: string;
+  email: string;
+  full_name: string;
+  username: string;
+  avatar_url?: string;
+}
+
+export async function findTransferRecipient(
+  query: string
+): Promise<TransferRecipient | null> {
+  const isEmail = query.includes('@') && query.includes('.');
+  const searchField = isEmail ? 'email' : 'username';
+  const searchValue = isEmail
+    ? query.trim().toLowerCase()
+    : query.replace('@', '').trim().toLowerCase();
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, email, full_name, username, avatar_url')
+    .eq(searchField, searchValue)
+    .single();
+
+  if (error || !data) return null;
+  return data as TransferRecipient;
+}
+
+export async function sendInternalTransfer(
+  senderId: string,
+  receiverId: string,
+  symbol: string,
+  name: string,
+  amount: number,
+  currentPrice: number,
+  note?: string
+): Promise<void> {
+  if (senderId === receiverId) {
+    throw new Error('You cannot send funds to yourself');
+  }
+
+  // Check sender balance
+  const senderWallet = await getWallet(senderId, symbol);
+  if (!senderWallet || senderWallet.balance < amount) {
+    throw new Error(
+      `Insufficient ${symbol} balance. Have ${
+        (senderWallet?.balance ?? 0).toFixed(6)
+      }, need ${amount.toFixed(6)}`
+    );
+  }
+
+  // Deduct from sender
+  await upsertWallet(
+    senderId, symbol, name,
+    senderWallet.balance - amount,
+    senderWallet.avg_buy_price
+  );
+
+  // Credit receiver
+  const receiverWallet = await getWallet(receiverId, symbol);
+  const receiverBalance = receiverWallet?.balance ?? 0;
+  const receiverAvg = receiverWallet?.avg_buy_price ?? currentPrice;
+  // Recalculate avg buy price for receiver
+  const totalValue = receiverBalance * receiverAvg + amount * currentPrice;
+  const newBalance = receiverBalance + amount;
+  const newAvg = newBalance > 0 ? totalValue / newBalance : currentPrice;
+
+  await upsertWallet(receiverId, symbol, name, newBalance, newAvg);
+
+  // Record transfer
+  const { error: txError } = await supabase
+    .from('internal_transfers')
+    .insert({
+      sender_id: senderId,
+      receiver_id: receiverId,
+      symbol,
+      amount,
+      note,
+      status: 'completed',
+    });
+  if (txError) throw txError;
+
+  const usdValue = amount * currentPrice;
+
+  // Record transactions for both parties
+  await addTransaction(senderId, {
+    type: 'send',
+    symbol,
+    amount,
+    price_usd: currentPrice,
+    total_usd: usdValue,
+    fee_usd: 0,
+    status: 'completed',
+    note: `Sent to @${receiverId.slice(0,6)} on EVONANCE`,
+  });
+
+  await addTransaction(receiverId, {
+    type: 'receive',
+    symbol,
+    amount,
+    price_usd: currentPrice,
+    total_usd: usdValue,
+    fee_usd: 0,
+    status: 'completed',
+    note: `Received from EVONANCE user`,
+  });
+}
+
+export async function getInternalTransfers(
+  userId: string,
+  limit = 20
+): Promise<InternalTransfer[]> {
+  const { data, error } = await supabase
+    .from('internal_transfers')
+    .select('*')
+    .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
+
 
 
 
