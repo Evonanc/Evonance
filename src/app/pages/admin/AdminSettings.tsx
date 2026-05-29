@@ -4,7 +4,7 @@ import AdminGuard from '../../components/AdminGuard';
 import { supabase } from '../../lib/supabase';
 import { logAdminAction } from '../../lib/admin';
 import { toast } from 'sonner';
-import { Users, Shield, Plus, Trash2 } from 'lucide-react';
+import { Users, Shield, Plus, Trash2, Edit, Check, X, ArrowDownLeft } from 'lucide-react';
 
 const ROLES = ['admin', 'support', 'compliance', 'finance'];
 
@@ -14,6 +14,12 @@ export default function AdminSettings() {
   const [newEmail, setNewEmail] = useState('');
   const [newRole, setNewRole]   = useState('support');
   const [adding, setAdding]   = useState(false);
+
+  // Platform addresses states
+  const [platformAddresses, setPlatformAddresses] = useState<any[]>([]);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [editingValue, setEditingValue] = useState('');
+  const [savingAddress, setSavingAddress] = useState(false);
 
   const load = async () => {
     try {
@@ -29,8 +35,21 @@ export default function AdminSettings() {
     }
   };
 
+  const loadAddresses = async () => {
+    try {
+      const { data } = await supabase
+        .from('platform_addresses')
+        .select('*')
+        .order('network');
+      setPlatformAddresses(data ?? []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     load();
+    loadAddresses();
   }, []);
 
   const handleAddAdmin = async () => {
@@ -84,6 +103,30 @@ export default function AdminSettings() {
       load();
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to remove admin');
+    }
+  };
+
+  const handleSaveAddress = async (addrId: string) => {
+    if (!editingValue.trim()) {
+      toast.error('Address cannot be empty');
+      return;
+    }
+    setSavingAddress(true);
+    try {
+      const { error } = await supabase
+        .from('platform_addresses')
+        .update({ address: editingValue.trim() })
+        .eq('id', addrId);
+      if (error) throw error;
+
+      await logAdminAction('update_platform_address', 'platform_address', addrId, { address: editingValue });
+      toast.success('Platform address updated successfully');
+      setEditingAddressId(null);
+      loadAddresses();
+    } catch (err: any) {
+      toast.error(err.message ?? 'Failed to update address');
+    } finally {
+      setSavingAddress(false);
     }
   };
 
@@ -196,6 +239,75 @@ export default function AdminSettings() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* Platform Addresses */}
+        <div className="bg-card border border-border rounded-2xl overflow-hidden mt-6 shadow-sm">
+          <div className="px-5 py-4 border-b border-border flex items-center gap-2">
+            <ArrowDownLeft className="w-4 h-4 text-muted-foreground" />
+            <h3 className="font-bold text-foreground">
+              Platform Deposit Addresses
+            </h3>
+          </div>
+          <div className="divide-y divide-border">
+            {platformAddresses.length === 0 ? (
+              <div className="px-5 py-8 text-center text-muted-foreground text-sm">
+                No deposit addresses configured
+              </div>
+            ) : platformAddresses.map(addr => {
+              const isEditing = editingAddressId === addr.id;
+              return (
+                <div key={addr.id} className="flex items-center gap-4 px-5 py-4 hover:bg-secondary/25 transition-colors">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-foreground">
+                      {addr.network} ({addr.symbol})
+                    </p>
+                    {isEditing ? (
+                      <div className="flex items-center gap-2 mt-2">
+                        <input
+                          type="text"
+                          value={editingValue}
+                          onChange={e => setEditingValue(e.target.value)}
+                          className="flex-1 bg-input-background border border-input rounded-lg px-3 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-all"
+                        />
+                        <button
+                          onClick={() => handleSaveAddress(addr.id)}
+                          disabled={savingAddress}
+                          className="p-1.5 bg-success text-success-foreground hover:bg-success/90 rounded-lg transition-colors cursor-pointer"
+                          title="Save Address"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setEditingAddressId(null)}
+                          className="p-1.5 bg-secondary text-foreground hover:bg-secondary/90 rounded-lg transition-colors cursor-pointer"
+                          title="Cancel"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground font-mono mt-1 break-all bg-secondary/30 px-2.5 py-1.5 rounded-lg border border-border/30">
+                        {addr.address}
+                      </p>
+                    )}
+                  </div>
+                  {!isEditing && (
+                    <button
+                      onClick={() => {
+                        setEditingAddressId(addr.id);
+                        setEditingValue(addr.address);
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 bg-secondary text-foreground hover:bg-secondary/80 text-xs font-semibold rounded-lg transition-colors cursor-pointer"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      Edit
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
 

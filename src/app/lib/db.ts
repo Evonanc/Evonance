@@ -959,5 +959,74 @@ export async function cancelWithdrawal(
     .eq('id', withdrawalId);
 }
 
+// ── Deposit Requests ──────────────────────────────────────────────
+
+export interface DepositRequest {
+  id: string;
+  user_id: string;
+  symbol: string;
+  amount: number;
+  network: string;
+  address: string;
+  tx_hash?: string;
+  status: 'pending' | 'confirmed' | 'rejected';
+  rejection_reason?: string;
+  created_at: string;
+}
+
+export interface PlatformAddress {
+  network: string;
+  symbol: string;
+  address: string;
+  label: string;
+}
+
+export async function getPlatformAddresses(): Promise<PlatformAddress[]> {
+  const { data, error } = await supabase
+    .from('platform_addresses')
+    .select('*')
+    .eq('active', true)
+    .order('network');
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function submitDepositRequest(
+  userId: string,
+  amount: number,
+  network: string,
+  address: string,
+  txHash?: string
+): Promise<string> {
+  const { data, error } = await supabase
+    .from('deposit_requests')
+    .insert({
+      user_id: userId,
+      symbol: 'USDT',
+      amount,
+      network,
+      address,
+      tx_hash: txHash ?? null,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
+export async function getUserDeposits(
+  userId: string
+): Promise<DepositRequest[]> {
+  const { data, error } = await supabase
+    .from('deposit_requests')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+
 
 

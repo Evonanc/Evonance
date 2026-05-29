@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, ArrowLeftRight,
   ShieldCheck, Gift, ScrollText, Settings,
   LogOut, Sun, Moon, Menu, X,
-  ChevronRight, AlertTriangle, ArrowUpRight
+  ChevronRight, AlertTriangle, ArrowUpRight, ArrowDownLeft
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -37,6 +37,13 @@ const NAV_ITEMS = [
     label: 'Withdrawals',
     icon: ArrowUpRight,
     href: '/admin/withdrawals',
+    roles: ['super_admin','admin','finance','compliance'],
+  },
+  {
+    id: 'deposits',
+    label: 'Deposits',
+    icon: ArrowDownLeft,
+    href: '/admin/deposits',
     roles: ['super_admin','admin','finance','compliance'],
   },
   {

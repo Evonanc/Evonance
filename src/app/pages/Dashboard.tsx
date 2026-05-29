@@ -14,7 +14,7 @@ import { useCryptoData } from '../hooks/useCryptoData';
 import { formatPrice, CoinData } from '../lib/crypto';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useAuth } from '../hooks/useAuth';
-import { getWatchlist, getUserWithdrawals, cancelWithdrawal, WithdrawalRequest } from '../lib/db';
+import { getWatchlist, getUserWithdrawals, cancelWithdrawal, WithdrawalRequest, getUserDeposits, DepositRequest } from '../lib/db';
 import { toast } from 'sonner';
 import DepositModal from '../components/DepositModal';
 import WithdrawModal from '../components/WithdrawModal';
@@ -63,16 +63,25 @@ export default function Dashboard() {
   // Watchlist — load symbols then match to live prices
   const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
   const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
+  const [deposits, setDeposits] = useState<DepositRequest[]>([]);
 
   const loadWithdrawals = () => {
     if (!user) return;
     getUserWithdrawals(user.id).then(setWithdrawals).catch(console.error);
   };
 
+  const loadDeposits = () => {
+    if (!user) return;
+    getUserDeposits(user.id)
+      .then(d => setDeposits(d.filter(x => x.status === 'pending')))
+      .catch(console.error);
+  };
+
   useEffect(() => {
     if (!user) return;
     getWatchlist(user.id).then(setWatchlistSymbols).catch(console.error);
     loadWithdrawals();
+    loadDeposits();
   }, [user]);
 
   const watchlistCoins = useMemo(() => {
@@ -276,6 +285,38 @@ export default function Dashboard() {
 
           {/* COL 2: Recent Transactions */}
           <div className="space-y-6">
+            {deposits.length > 0 && (
+              <div className="bg-card border border-primary/20 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <ArrowDownLeft className="w-4 h-4 text-primary" />
+                  <h3 className="font-bold text-foreground text-sm">
+                    Pending Deposits
+                  </h3>
+                  <span className="text-xs bg-primary/10 text-primary px-2
+                    py-0.5 rounded-full font-medium font-semibold">
+                    {deposits.length}
+                  </span>
+                </div>
+                {deposits.map(d => (
+                  <div key={d.id} className="flex items-center justify-between
+                    p-3 bg-secondary rounded-xl mb-2 last:mb-0">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        ${d.amount.toFixed(2)} USDT — {d.network}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {new Date(d.created_at).toLocaleDateString()} · {d.tx_hash ? 'Hash provided' : 'No hash provided'}
+                      </p>
+                    </div>
+                    <span className="text-xs bg-primary/10 text-primary
+                      px-2 py-0.5 rounded-full font-medium font-semibold">
+                      Awaiting confirmation
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {withdrawals.filter(w => w.status === 'pending').length > 0 && (
               <div className="bg-card border border-warning/20 rounded-2xl p-5">
                 <div className="flex items-center gap-2 mb-4">
@@ -499,7 +540,10 @@ export default function Dashboard() {
       <DepositModal
         open={depositOpen}
         onClose={() => setDepositOpen(false)}
-        onSuccess={refresh}
+        onSuccess={() => {
+          refresh();
+          loadDeposits();
+        }}
       />
       <WithdrawModal
         open={withdrawOpen}

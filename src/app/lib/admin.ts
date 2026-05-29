@@ -419,3 +419,116 @@ export async function rejectWithdrawal(
   );
 }
 
+// ── Admin Deposit Requests ────────────────────────────────────────
+
+export async function getDepositRequests(
+  status?: string
+): Promise<any[]> {
+  let query = supabase
+    .from('deposit_requests')
+    .select(`
+      *,
+      profiles!deposit_requests_user_id_fkey(
+        email, full_name, kyc_status
+      )
+    `)
+    .order('created_at', { ascending: false });
+  if (status && status !== 'all') query = query.eq('status', status);
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function approveDeposit(
+  depositId: string,
+  adminId: string
+): Promise<void> {
+  const { data: dr } = await supabase
+    .from('deposit_requests')
+    .select('*')
+    .eq('id', depositId)
+    .single();
+  if (!dr) throw new Error('Deposit not found');
+
+  // Credit the wallet
+  const { getWallet, upsertWallet,
+    addTransaction, createNotification } = await import('./db');
+  const wallet = await getWallet(dr.user_id, 'USDT');
+  await upsertWallet(
+    dr.user_id, 'USDT', 'Tether',
+    (wallet?.balance ?? 0) + dr.amount, 1
+  );
+
+  // Record transaction
+  await addTransaction(dr.user_id, {
+    type: 'deposit',
+    symbol: 'USDT',
+    amount: dr.amount,
+    price_usd: 1,
+    total_usd: dr.amount,
+    fee_usd: 0,
+    status: 'completed',
+    note: `Deposit confirmed — ${dr.network}`,
+  });
+
+  // Update request status
+  await supabase
+    .from('deposit_requests')
+    .update({
+      status: 'confirmed',
+      admin_id: adminId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', depositId);
+
+  // Notify user
+  await createNotification(
+    dr.user_id, 'deposit',
+    'Deposit confirmed!',
+    `Your deposit of $${dr.amount.toFixed(2)} USDT has been confirmed and credited to your wallet.`,
+    '/dashboard'
+  );
+
+  await logAdminAction(
+    'deposit_approved', 'deposit', depositId,
+    { amount: dr.amount, network: dr.network }
+  );
+}
+
+export async function rejectDeposit(
+  depositId: string,
+  adminId: string,
+  reason: string
+): Promise<void> {
+  const { data: dr } = await supabase
+    .from('deposit_requests')
+    .select('*')
+    .eq('id', depositId)
+    .single();
+  if (!dr) throw new Error('Deposit not found');
+
+  await supabase
+    .from('deposit_requests')
+    .update({
+      status: 'rejected',
+      rejection_reason: reason,
+      admin_id: adminId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', depositId);
+
+  const { createNotification } = await import('./db');
+  await createNotification(
+    dr.user_id, 'deposit',
+    'Deposit could not be confirmed',
+    `Your deposit of $${dr.amount.toFixed(2)} USDT was not confirmed: ${reason}. Please contact support if you believe this is an error.`,
+    '/dashboard'
+  );
+
+  await logAdminAction(
+    'deposit_rejected', 'deposit', depositId,
+    { amount: dr.amount, reason }
+  );
+}
+
+

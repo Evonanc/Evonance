@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, Copy, CheckCircle, AlertCircle } from 'lucide-react';
+import { X, Copy, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { depositFunds, createNotification, getWallets } from '../lib/db';
-import { sendDepositConfirmed } from '../lib/email';
+import { getPlatformAddresses, submitDepositRequest, createNotification, PlatformAddress } from '../lib/db';
 import { toast } from 'sonner';
 
 interface Props {
@@ -11,40 +10,6 @@ interface Props {
   onClose: () => void;
   onSuccess?: () => void;
 }
-
-// Mock wallet addresses per network
-const NETWORKS = [
-  {
-    name: 'TRC-20 (TRON)',
-    symbol: 'USDT',
-    address: 'TEvonanceWalletTRC20xxxxxxxxxx',
-    confirmations: '1 confirmation',
-    time: '~1 minute',
-    fee: 'Free',
-    min: '$10',
-    color: '#ef4444',
-  },
-  {
-    name: 'ERC-20 (Ethereum)',
-    symbol: 'USDT',
-    address: '0xEvonanceWalletERC20xxxxxxxxxx',
-    confirmations: '12 confirmations',
-    time: '~3 minutes',
-    fee: '~$2',
-    min: '$20',
-    color: '#627eea',
-  },
-  {
-    name: 'BEP-20 (BSC)',
-    symbol: 'USDT',
-    address: '0xEvonanceWalletBEP20xxxxxxxxxx',
-    confirmations: '15 confirmations',
-    time: '~1 minute',
-    fee: '~$0.10',
-    min: '$10',
-    color: '#f3ba2f',
-  },
-];
 
 export default function DepositModal({ open, onClose, onSuccess }: Props) {
   const { user } = useAuth();
@@ -55,55 +20,79 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(false);
 
+  // Dynamic Platform Addresses
+  const [addresses, setAddresses] = useState<PlatformAddress[]>([]);
+  const [loadingAddresses, setLoadingAddresses] = useState(true);
+
+  useEffect(() => {
+    if (open) {
+      setLoadingAddresses(true);
+      getPlatformAddresses()
+        .then(a => {
+          setAddresses(a);
+          setLoadingAddresses(false);
+        })
+        .catch(err => {
+          console.error(err);
+          setLoadingAddresses(false);
+        });
+    }
+  }, [open]);
+
+  const NETWORKS = addresses.map(a => ({
+    name: a.network,
+    address: a.address,
+    label: a.label,
+    fee: a.network.includes('ERC') ? 5 : 1,
+    min: a.network.includes('ERC') ? 20 : 10,
+    time: a.network.includes('ERC') ? '~3 minutes' : '~1 minute',
+    color: a.network.includes('ERC') ? '#627eea'
+      : a.network.includes('BEP') ? '#f3ba2f'
+      : '#ef4444',
+  }));
+
   const network = NETWORKS[selectedNetwork];
 
   const handleCopy = () => {
+    if (!network) return;
     navigator.clipboard.writeText(network.address);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
   const handleConfirmDeposit = async () => {
-    if (!user) return;
+    if (!user || !network) return;
     const amt = parseFloat(amount);
     if (!amt || amt < 10) {
-      toast.error('Minimum deposit is $10'); return;
+      toast.error('Minimum deposit is $10');
+      return;
     }
+
     setLoading(true);
     try {
-      await depositFunds(user.id, amt);
-      createNotification(
+      await submitDepositRequest(
+        user.id,
+        amt,
+        network.name,
+        network.address,
+        txHash || undefined
+      );
+
+      await createNotification(
         user.id, 'deposit',
-        `Deposit confirmed`,
-        `$${amt.toFixed(2)} USDT has been credited to your wallet.`,
+        'Deposit submitted for review',
+        `Your deposit of $${amt.toFixed(2)} USDT is pending admin confirmation. You will be notified once credited.`,
         '/dashboard'
-      ).catch(console.error);
-      getWallets(user.id).then(wallets => {
-        const usdtWallet = wallets.find(w => w.symbol === 'USDT');
-        sendDepositConfirmed(user.email!, {
-          firstName: user.user_metadata?.first_name ?? 'Trader',
-          amount: amt,
-          symbol: 'USDT',
-          network: network.name,
-          newBalance: usdtWallet ? usdtWallet.balance : amt,
-        }).catch(console.warn);
-      }).catch(() => {
-        sendDepositConfirmed(user.email!, {
-          firstName: user.user_metadata?.first_name ?? 'Trader',
-          amount: amt,
-          symbol: 'USDT',
-          network: network.name,
-          newBalance: amt,
-        }).catch(console.warn);
-      });
-      toast.success(`$${amt} deposited successfully`);
+      );
+
+      toast.success('Deposit submitted — pending confirmation');
       setStep('select');
       setAmount('');
       setTxHash('');
       onSuccess?.();
       onClose();
     } catch (err: any) {
-      toast.error(err.message ?? 'Deposit failed');
+      toast.error(err.message ?? 'Deposit submission failed');
     } finally {
       setLoading(false);
     }
@@ -135,7 +124,7 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
               </p>
             </div>
             <button onClick={handleClose}
-              className="p-2 rounded-lg hover:bg-secondary transition-colors">
+              className="p-2 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
               <X className="w-5 h-5 text-muted-foreground" />
             </button>
           </div>
@@ -146,38 +135,49 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
               <p className="text-sm font-medium text-foreground mb-3">
                 Select network
               </p>
-              {NETWORKS.map((net, i) => (
-                <button key={i} onClick={() => {
-                  setSelectedNetwork(i); setStep('address');
-                }}
-                  className="w-full flex items-center justify-between p-4 rounded-xl
-                    border border-border bg-background hover:border-primary/50
-                    hover:bg-primary/5 transition-all text-left">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full flex items-center justify-center
-                      font-bold text-sm text-white"
-                      style={{ backgroundColor: net.color }}>
-                      {net.symbol[0]}
+              {loadingAddresses ? (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={idx} className="w-full h-20 skeleton rounded-xl" />
+                ))
+              ) : NETWORKS.length === 0 ? (
+                <div className="text-center py-6 text-sm text-muted-foreground">
+                  No active platform deposit addresses found. Please contact support.
+                </div>
+              ) : (
+                NETWORKS.map((net, i) => (
+                  <button key={i} onClick={() => {
+                    setSelectedNetwork(i);
+                    setStep('address');
+                  }}
+                    className="w-full flex items-center justify-between p-4 rounded-xl
+                      border border-border bg-background hover:border-primary/50
+                      hover:bg-primary/5 transition-all text-left cursor-pointer">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center
+                        font-bold text-sm text-white"
+                        style={{ backgroundColor: net.color }}>
+                        U
+                      </div>
+                      <div>
+                        <p className="font-medium text-foreground text-sm">{net.name}</p>
+                        <p className="text-xs text-muted-foreground">{net.time} · Fee: Free</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground text-sm">{net.name}</p>
-                      <p className="text-xs text-muted-foreground">{net.time} · Fee: {net.fee}</p>
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Min</p>
+                      <p className="text-sm font-medium text-foreground">${net.min}</p>
                     </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-xs text-muted-foreground">Min</p>
-                    <p className="text-sm font-medium text-foreground">{net.min}</p>
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))
+              )}
             </div>
           )}
 
           {/* Step 2 — Show address */}
-          {step === 'address' && (
+          {step === 'address' && network && (
             <div className="space-y-4">
               <button onClick={() => setStep('select')}
-                className="text-sm text-primary hover:underline flex items-center gap-1">
+                className="text-sm text-primary hover:underline flex items-center gap-1 cursor-pointer">
                 ← Back to networks
               </button>
 
@@ -196,7 +196,7 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
                 <div className="w-6 h-6 rounded-full flex items-center justify-center
                   text-white text-xs font-bold"
                   style={{ backgroundColor: network.color }}>
-                  {network.symbol[0]}
+                  U
                 </div>
                 <span className="text-sm font-medium text-foreground">{network.name}</span>
               </div>
@@ -222,13 +222,13 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { label: 'Network', value: network.name },
-                  { label: 'Confirmations', value: network.confirmations },
+                  { label: 'Platform Fee', value: 'Free' },
                   { label: 'Estimated time', value: network.time },
-                  { label: 'Deposit fee', value: network.fee },
+                  { label: 'Minimum Deposit', value: `$${network.min}` },
                 ].map(({ label, value }) => (
                   <div key={label} className="bg-secondary rounded-lg p-3">
                     <p className="text-xs text-muted-foreground">{label}</p>
-                    <p className="text-sm font-medium text-foreground mt-0.5">{value}</p>
+                    <p className="text-sm font-semibold text-foreground mt-0.5">{value}</p>
                   </div>
                 ))}
               </div>
@@ -242,7 +242,7 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
           )}
 
           {/* Step 3 — Confirm receipt */}
-          {step === 'confirm' && (
+          {step === 'confirm' && network && (
             <div className="space-y-4">
               <button onClick={() => setStep('address')}
                 className="text-sm text-primary hover:underline cursor-pointer">
@@ -277,7 +277,7 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
                       className="w-full bg-input-background border border-input rounded-lg
                         pl-7 pr-4 py-3 text-foreground placeholder:text-muted-foreground
                         focus:outline-none focus:border-primary focus:ring-2
-                        focus:ring-primary/20 transition-all"
+                        focus:ring-primary/20 transition-all font-semibold"
                     />
                   </div>
                 </div>
@@ -331,8 +331,16 @@ export default function DepositModal({ open, onClose, onSuccess }: Props) {
                         rounded-full animate-spin" />
                       Processing...
                     </span>
-                  ) : 'Confirm Deposit'}
+                  ) : 'Submit Deposit'}
                 </button>
+
+                {/* Notice below confirm button */}
+                <div className="flex items-start gap-2 p-3 bg-secondary rounded-xl">
+                  <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Deposits are manually verified by our team within 24 hours. Providing your transaction hash speeds up confirmation.
+                  </p>
+                </div>
               </div>
             </div>
           )}
