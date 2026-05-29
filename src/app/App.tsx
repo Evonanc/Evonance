@@ -84,6 +84,7 @@ const AdminUsers        = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminTransactions = lazy(() => import('./pages/admin/AdminTransactions'));
 const AdminKYC          = lazy(() => import('./pages/admin/AdminKYC'));
 const AdminReferrals    = lazy(() => import('./pages/admin/AdminReferrals'));
+const AdminWithdrawals  = lazy(() => import('./pages/admin/AdminWithdrawals'));
 const AdminAudit        = lazy(() => import('./pages/admin/AdminAudit'));
 const AdminSettings     = lazy(() => import('./pages/admin/AdminSettings'));
 
@@ -208,6 +209,13 @@ function AnimatedRoutes() {
               <ProtectedRoute>
                 <Suspense fallback={<AdminPageLoader />}>
                   <AdminTransactions />
+                </Suspense>
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/withdrawals" element={
+              <ProtectedRoute>
+                <Suspense fallback={<AdminPageLoader />}>
+                  <AdminWithdrawals />
                 </Suspense>
               </ProtectedRoute>
             } />

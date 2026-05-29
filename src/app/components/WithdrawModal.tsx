@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
-import { X, AlertCircle, ChevronDown } from 'lucide-react';
+import { X, AlertCircle, ChevronDown, Clock } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { withdrawFunds, getWallet, createNotification } from '../lib/db';
+import { submitWithdrawalRequest, getWallet, createNotification } from '../lib/db';
 import { sendWithdrawalProcessed } from '../lib/email';
 import { toast } from 'sonner';
+import KYCGate from './KYCGate';
+import { useKYC } from '../hooks/useKYC';
 
 interface Props {
   open: boolean;
@@ -20,6 +22,7 @@ const NETWORKS = [
 
 export default function WithdrawModal({ open, onClose, onSuccess }: Props) {
   const { user } = useAuth();
+  const { status: kycStatus } = useKYC();
   const [address, setAddress] = useState('');
   const [amount, setAmount] = useState('');
   const [networkIndex, setNetworkIndex] = useState(0);
@@ -49,22 +52,29 @@ export default function WithdrawModal({ open, onClose, onSuccess }: Props) {
     if (!user || !canSubmit) return;
     setLoading(true);
     try {
-      await withdrawFunds(user.id, amountNum, address);
-      createNotification(
+      const withdrawalId = await submitWithdrawalRequest(
+        user.id, amountNum, fee, network.name, address
+      );
+
+      // Notify user
+      await createNotification(
         user.id, 'withdrawal',
-        `Withdrawal submitted`,
-        `$${amountNum.toFixed(2)} withdrawal to ${address.slice(0,8)}... is being processed.`,
+        'Withdrawal submitted for review',
+        `Your withdrawal of $${amountNum.toFixed(2)} USDT is pending admin approval. You will be notified once processed.`,
         '/dashboard'
-      ).catch(console.error);
+      );
+
+      // Send email
       sendWithdrawalProcessed(user.email!, {
-        firstName: user.user_metadata?.first_name ?? 'Trader',
+        firstName: user.user_metadata?.first_name ?? 'User',
         amount: amountNum,
         symbol: 'USDT',
         address,
         fee,
         network: network.name,
       }).catch(console.warn);
-      toast.success(`$${amountNum} withdrawal submitted`);
+
+      toast.success('Withdrawal submitted — pending admin review');
       setAddress('');
       setAmount('');
       onSuccess?.();
@@ -83,6 +93,30 @@ export default function WithdrawModal({ open, onClose, onSuccess }: Props) {
     setAmount(maxAmount.toFixed(2));
     setBalance(w?.balance ?? 0);
   };
+
+  // If KYC not verified show gate instead of form
+  if (kycStatus !== 'verified') {
+    return (
+      <Dialog.Root open={open} onOpenChange={onClose}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" />
+          <Dialog.Content className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2
+            z-50 w-full max-w-md bg-card border border-border rounded-2xl shadow-2xl p-6 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <Dialog.Title className="text-xl font-bold text-foreground">
+                Withdraw Funds
+              </Dialog.Title>
+              <button onClick={onClose}
+                className="p-2 rounded-lg hover:bg-secondary transition-colors cursor-pointer">
+                <X className="w-5 h-5 text-muted-foreground" />
+              </button>
+            </div>
+            <KYCGate status={kycStatus} onClose={onClose} />
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
+    );
+  }
 
   return (
     <Dialog.Root open={open} onOpenChange={onClose}>
@@ -234,8 +268,16 @@ export default function WithdrawModal({ open, onClose, onSuccess }: Props) {
                     rounded-full animate-spin" />
                   Processing...
                 </span>
-              ) : `Withdraw $${amountNum > 0 ? amountNum.toFixed(2) : '0.00'}`}
+              ) : 'Submit for Review'}
             </button>
+
+            {/* Notice below submit button */}
+            <div className="flex items-start gap-2 mt-3 p-3 bg-secondary rounded-xl">
+              <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Withdrawals are reviewed by our compliance team within 24 hours. Funds are locked immediately and released on completion or refunded if rejected.
+              </p>
+            </div>
           </div>
         </Dialog.Content>
       </Dialog.Portal>

@@ -5,7 +5,7 @@ import {
   ArrowUpRight, ArrowDownRight, 
   TrendingUp, Wallet, ArrowLeftRight, CreditCard, 
   ArrowUp, ArrowDown, BookOpen, Eye, EyeOff, CheckCircle2, ChevronRight,
-  ArrowDownLeft
+  ArrowDownLeft, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { fadeUp, scaleIn, slideInRight, staggerContainer, staggerFast } from '../lib/animations';
@@ -14,7 +14,8 @@ import { useCryptoData } from '../hooks/useCryptoData';
 import { formatPrice, CoinData } from '../lib/crypto';
 import { usePortfolio } from '../hooks/usePortfolio';
 import { useAuth } from '../hooks/useAuth';
-import { getWatchlist } from '../lib/db';
+import { getWatchlist, getUserWithdrawals, cancelWithdrawal, WithdrawalRequest } from '../lib/db';
+import { toast } from 'sonner';
 import DepositModal from '../components/DepositModal';
 import WithdrawModal from '../components/WithdrawModal';
 import SendModal from '../components/SendModal';
@@ -61,9 +62,17 @@ export default function Dashboard() {
 
   // Watchlist — load symbols then match to live prices
   const [watchlistSymbols, setWatchlistSymbols] = useState<string[]>([]);
+  const [withdrawals, setWithdrawals] = useState<WithdrawalRequest[]>([]);
+
+  const loadWithdrawals = () => {
+    if (!user) return;
+    getUserWithdrawals(user.id).then(setWithdrawals).catch(console.error);
+  };
+
   useEffect(() => {
     if (!user) return;
     getWatchlist(user.id).then(setWatchlistSymbols).catch(console.error);
+    loadWithdrawals();
   }, [user]);
 
   const watchlistCoins = useMemo(() => {
@@ -266,13 +275,67 @@ export default function Dashboard() {
           </motion.div>
 
           {/* COL 2: Recent Transactions */}
-          <motion.div 
-            initial={shouldReduceMotion ? {} : 'hidden'}
-            animate={shouldReduceMotion ? {} : 'visible'}
-            variants={fadeUp}
-            transition={{ delay: 0.35 }}
-            className="bg-card border border-border rounded-2xl p-6 shadow-sm"
-          >
+          <div className="space-y-6">
+            {withdrawals.filter(w => w.status === 'pending').length > 0 && (
+              <div className="bg-card border border-warning/20 rounded-2xl p-5">
+                <div className="flex items-center gap-2 mb-4">
+                  <Clock className="w-4 h-4 text-warning" />
+                  <h3 className="font-bold text-foreground text-sm">
+                    Pending Withdrawals
+                  </h3>
+                  <span className="text-xs bg-warning/10 text-warning px-2
+                    py-0.5 rounded-full font-medium font-semibold">
+                    {withdrawals.filter(w => w.status === 'pending').length}
+                  </span>
+                </div>
+                {withdrawals.filter(w => w.status === 'pending').map(wr => (
+                  <div key={wr.id} className="flex items-center justify-between
+                    p-3 bg-secondary rounded-xl mb-2 last:mb-0">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">
+                        ${wr.amount.toFixed(2)} USDT — {wr.network}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {wr.address.slice(0,10)}... · {new Date(wr.created_at).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs bg-warning/10 text-warning
+                        px-2 py-0.5 rounded-full font-medium font-semibold">
+                        Pending review
+                      </span>
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (!user) return;
+                            await cancelWithdrawal(user.id, wr.id);
+                            setWithdrawals(prev =>
+                              prev.map(w => w.id === wr.id
+                                ? { ...w, status: 'cancelled' }
+                                : w
+                              )
+                            );
+                            toast.success('Withdrawal cancelled — funds refunded');
+                          } catch (err: any) {
+                            toast.error(err.message);
+                          }
+                        }}
+                        className="text-xs text-destructive hover:underline font-semibold cursor-pointer">
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <motion.div 
+              initial={shouldReduceMotion ? {} : 'hidden'}
+              animate={shouldReduceMotion ? {} : 'visible'}
+              variants={fadeUp}
+              transition={{ delay: 0.35 }}
+              className="bg-card border border-border rounded-2xl p-6 shadow-sm"
+            >
             <h3 className="font-bold text-lg text-foreground mb-6">Recent Activity</h3>
             <motion.div 
               variants={staggerFast}
@@ -336,6 +399,7 @@ export default function Dashboard() {
               )}
             </motion.div>
           </motion.div>
+          </div>
 
           {/* COL 3: Watchlist & News */}
           <div className="space-y-6">
@@ -440,7 +504,10 @@ export default function Dashboard() {
       <WithdrawModal
         open={withdrawOpen}
         onClose={() => setWithdrawOpen(false)}
-        onSuccess={refresh}
+        onSuccess={() => {
+          refresh();
+          loadWithdrawals();
+        }}
       />
       <SendModal
         open={sendOpen}

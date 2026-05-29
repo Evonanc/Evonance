@@ -845,4 +845,119 @@ export async function creditReferralReward(
   })();
 }
 
+// ── Withdrawal Requests ───────────────────────────────────────────
+
+export interface WithdrawalRequest {
+  id: string;
+  user_id: string;
+  symbol: string;
+  amount: number;
+  fee: number;
+  net_amount: number;
+  network: string;
+  address: string;
+  status: 'pending'|'processing'|'completed'|'rejected'|'cancelled';
+  rejection_reason?: string;
+  tx_hash?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function submitWithdrawalRequest(
+  userId: string,
+  amount: number,
+  fee: number,
+  network: string,
+  address: string
+): Promise<string> {
+  // Lock funds immediately — deduct from wallet
+  const wallet = await getWallet(userId, 'USDT');
+  const total = amount + fee;
+  if (!wallet || wallet.balance < total) {
+    throw new Error(
+      `Insufficient balance. Need $${total.toFixed(2)}, have $${(wallet?.balance ?? 0).toFixed(2)}`
+    );
+  }
+
+  // Deduct from wallet immediately (funds locked)
+  await upsertWallet(
+    userId, 'USDT', 'Tether',
+    wallet.balance - total, 1
+  );
+
+  // Create withdrawal request
+  const { data, error } = await supabase
+    .from('withdrawal_requests')
+    .insert({
+      user_id:    userId,
+      symbol:     'USDT',
+      amount,
+      fee,
+      net_amount: amount - fee,
+      network,
+      address,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  // Record as pending transaction
+  await addTransaction(userId, {
+    type: 'withdraw',
+    symbol: 'USDT',
+    amount,
+    price_usd: 1,
+    total_usd: amount,
+    fee_usd: fee,
+    status: 'pending',
+    note: `Withdrawal to ${address.slice(0,8)}...${address.slice(-4)} — pending admin review`,
+  });
+
+  return data.id;
+}
+
+export async function getUserWithdrawals(
+  userId: string
+): Promise<WithdrawalRequest[]> {
+  const { data, error } = await supabase
+    .from('withdrawal_requests')
+    .select('*')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function cancelWithdrawal(
+  userId: string,
+  withdrawalId: string
+): Promise<void> {
+  // Get withdrawal
+  const { data: wr, error } = await supabase
+    .from('withdrawal_requests')
+    .select('*')
+    .eq('id', withdrawalId)
+    .eq('user_id', userId)
+    .single();
+  if (error || !wr) throw new Error('Withdrawal not found');
+  if (wr.status !== 'pending') {
+    throw new Error('Only pending withdrawals can be cancelled');
+  }
+
+  // Refund locked funds
+  const wallet = await getWallet(userId, 'USDT');
+  await upsertWallet(
+    userId, 'USDT', 'Tether',
+    (wallet?.balance ?? 0) + wr.amount + wr.fee, 1
+  );
+
+  // Update status
+  await supabase
+    .from('withdrawal_requests')
+    .update({ status: 'cancelled' })
+    .eq('id', withdrawalId);
+}
+
+
 

@@ -297,3 +297,125 @@ export async function getAuditLog(limit = 50) {
   if (error) throw error;
   return data ?? [];
 }
+
+// ── Admin Withdrawal Requests ─────────────────────────────────────
+
+export async function getWithdrawalRequests(
+  status?: string
+): Promise<any[]> {
+  let query = supabase
+    .from('withdrawal_requests')
+    .select(`
+      *,
+      profiles!withdrawal_requests_user_id_fkey(
+        email, full_name, kyc_status, kyc_level
+      )
+    `)
+    .order('created_at', { ascending: false });
+  if (status && status !== 'all') {
+    query = query.eq('status', status);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function approveWithdrawal(
+  withdrawalId: string,
+  adminId: string,
+  txHash?: string
+): Promise<void> {
+  const { data: wr } = await supabase
+    .from('withdrawal_requests')
+    .select('*')
+    .eq('id', withdrawalId)
+    .single();
+  if (!wr) throw new Error('Withdrawal not found');
+
+  await supabase
+    .from('withdrawal_requests')
+    .update({
+      status: 'completed',
+      admin_id: adminId,
+      reviewed_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      tx_hash: txHash ?? null,
+    })
+    .eq('id', withdrawalId);
+
+  // Update transaction status
+  await supabase
+    .from('transactions')
+    .update({ status: 'completed' })
+    .eq('user_id', wr.user_id)
+    .eq('type', 'withdraw')
+    .eq('status', 'pending')
+    .gte('created_at', wr.created_at);
+
+  // Notify user
+  const { createNotification } = await import('./db');
+  await createNotification(
+    wr.user_id, 'withdrawal',
+    'Withdrawal completed',
+    `Your withdrawal of $${wr.amount.toFixed(2)} USDT has been processed successfully.`,
+    '/dashboard'
+  );
+
+  await logAdminAction(
+    'withdrawal_approved', 'withdrawal', withdrawalId,
+    { amount: wr.amount, address: wr.address }
+  );
+}
+
+export async function rejectWithdrawal(
+  withdrawalId: string,
+  adminId: string,
+  reason: string
+): Promise<void> {
+  const { data: wr } = await supabase
+    .from('withdrawal_requests')
+    .select('*')
+    .eq('id', withdrawalId)
+    .single();
+  if (!wr) throw new Error('Withdrawal not found');
+
+  // Refund the user
+  const { getWallet, upsertWallet, createNotification } =
+    await import('./db');
+  const wallet = await getWallet(wr.user_id, 'USDT');
+  await upsertWallet(
+    wr.user_id, 'USDT', 'Tether',
+    (wallet?.balance ?? 0) + wr.amount + wr.fee, 1
+  );
+
+  await supabase
+    .from('withdrawal_requests')
+    .update({
+      status: 'rejected',
+      rejection_reason: reason,
+      admin_id: adminId,
+      reviewed_at: new Date().toISOString(),
+    })
+    .eq('id', withdrawalId);
+
+  await supabase
+    .from('transactions')
+    .update({ status: 'failed' })
+    .eq('user_id', wr.user_id)
+    .eq('type', 'withdraw')
+    .eq('status', 'pending')
+    .gte('created_at', wr.created_at);
+
+  await createNotification(
+    wr.user_id, 'withdrawal',
+    'Withdrawal rejected — funds refunded',
+    `Your withdrawal of $${wr.amount.toFixed(2)} USDT was rejected: ${reason}. Funds have been returned to your wallet.`,
+    '/dashboard'
+  );
+
+  await logAdminAction(
+    'withdrawal_rejected', 'withdrawal', withdrawalId,
+    { amount: wr.amount, reason }
+  );
+}
+
