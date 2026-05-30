@@ -19,55 +19,58 @@ create table if not exists public.user_profiles (
   updated_at    timestamptz not null default now()
 );
 
--- Auto-create profile on signup
+-- Auto-create profile on signup (bulletproof: each insert isolated in its own exception block)
 create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer as $$
+returns trigger language plpgsql security definer
+set search_path = public, pg_catalog
+as $$
 begin
-  -- Insert into profiles (used by EVONANCE codebase)
-  insert into public.profiles (
-    id, 
-    email, 
-    first_name, 
-    last_name, 
-    full_name, 
-    kyc_status
-  )
-  values (
-    new.id,
-    new.email,
-    new.raw_user_meta_data ->> 'first_name',
-    new.raw_user_meta_data ->> 'last_name',
-    coalesce(new.raw_user_meta_data ->> 'full_name', concat(new.raw_user_meta_data ->> 'first_name', ' ', new.raw_user_meta_data ->> 'last_name')),
-    'none'
-  )
-  on conflict (id) do update
-  set email = excluded.email,
-      first_name = coalesce(excluded.first_name, public.profiles.first_name),
-      last_name = coalesce(excluded.last_name, public.profiles.last_name),
-      full_name = coalesce(excluded.full_name, public.profiles.full_name);
 
-  -- Auto-create default USDT wallet (non-null symbol constraint satisfied)
-  insert into public.wallets (
-    id, 
-    user_id, 
-    symbol, 
-    name, 
-    balance, 
-    avg_buy_price,
-    created_at,
-    updated_at
-  )
-  values (
-    gen_random_uuid(), 
-    new.id, 
-    'USDT', 
-    'Tether', 
-    0.00, 
-    1.00,
-    now(),
-    now()
-  )
-  on conflict do nothing;
+  -- Safely insert profile (swallow errors so signup never fails)
+  begin
+    insert into public.profiles (
+      id,
+      email,
+      first_name,
+      last_name,
+      full_name,
+      kyc_status,
+      kyc_level
+    )
+    values (
+      new.id,
+      new.email,
+      new.raw_user_meta_data ->> 'first_name',
+      new.raw_user_meta_data ->> 'last_name',
+      coalesce(
+        nullif(trim(new.raw_user_meta_data ->> 'full_name'), ''),
+        nullif(trim(concat(
+          new.raw_user_meta_data ->> 'first_name', ' ',
+          new.raw_user_meta_data ->> 'last_name'
+        )), ''),
+        new.email
+      ),
+      'none',
+      1
+    )
+    on conflict (id) do update
+    set
+      email      = excluded.email,
+      first_name = coalesce(excluded.first_name, profiles.first_name),
+      last_name  = coalesce(excluded.last_name,  profiles.last_name),
+      full_name  = coalesce(excluded.full_name,  profiles.full_name);
+  exception when others then
+    raise warning 'handle_new_user: profiles insert failed for %: %', new.id, sqlerrm;
+  end;
+
+  -- Safely insert default USDT wallet
+  begin
+    insert into public.wallets (user_id, symbol, name, balance, avg_buy_price)
+    values (new.id, 'USDT', 'Tether', 0.00, 1.00)
+    on conflict do nothing;
+  exception when others then
+    raise warning 'handle_new_user: wallets insert failed for %: %', new.id, sqlerrm;
+  end;
 
   return new;
 end;
@@ -77,6 +80,9 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Remove legacy seed trigger (references non-existent tables: cards, watchlist)
+drop trigger if exists on_auth_user_seeded on auth.users;
 
 -- Auto-update updated_at
 create or replace function public.update_updated_at()
