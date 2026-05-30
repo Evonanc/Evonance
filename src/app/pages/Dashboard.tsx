@@ -40,6 +40,9 @@ export default function Dashboard() {
   const [withdrawOpen, setWithdrawOpen] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [showAllTransactions, setShowAllTransactions] = useState(false);
+  const [showAllAssets, setShowAllAssets] = useState(false);
+  const [hideHoldings, setHideHoldings] = useState(false);
 
   const { user } = useAuth();
   const { level, status } = useKYC();
@@ -90,10 +93,57 @@ export default function Dashboard() {
       .filter((c): c is CoinData => !!c);
   }, [watchlistSymbols, coins]);
 
-  const newsList = [
-    { title: 'Bitcoin surges past key resistance level', source: 'Bloomberg', time: '1 hour ago' },
-    { title: 'DeFi TVL surges by $12B in active multi-chain deposits', source: 'CoinDesk', time: '4 hours ago' },
-    { title: 'USDT supply hits new high as demand increases', source: 'The Block', time: '7 hours ago' },
+  const [realtimeNews, setRealtimeNews] = useState<{ title: string; source: string; time: string; url: string }[]>([]);
+  const [newsLoading, setNewsLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    async function fetchNews() {
+      try {
+        const res = await fetch('https://min-api.cryptocompare.com/data/v2/news/?lang=EN');
+        if (!res.ok) throw new Error('News fetch failed');
+        const json = await res.json();
+        if (json && json.Data && Array.isArray(json.Data) && active) {
+          const items = json.Data.slice(0, 4).map((item: any) => {
+            const secsAgo = Math.floor(Date.now() / 1000) - item.published_on;
+            let timeStr = 'Just now';
+            if (secsAgo >= 86400) {
+              timeStr = Math.floor(secsAgo / 86400) + 'd ago';
+            } else if (secsAgo >= 3600) {
+              timeStr = Math.floor(secsAgo / 3600) + 'h ago';
+            } else if (secsAgo >= 60) {
+              timeStr = Math.max(1, Math.floor(secsAgo / 60)) + 'm ago';
+            }
+
+            return {
+              title: item.title,
+              source: item.source_info?.name || item.source || 'Crypto News',
+              time: timeStr,
+              url: item.url
+            };
+          });
+          setRealtimeNews(items);
+        }
+      } catch (err) {
+        console.warn('Could not fetch real-time crypto news:', err);
+      } finally {
+        if (active) {
+          setNewsLoading(false);
+        }
+      }
+    }
+    fetchNews();
+    const interval = setInterval(fetchNews, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const newsList = realtimeNews.length > 0 ? realtimeNews : [
+    { title: 'Bitcoin surges past key resistance level', source: 'Bloomberg', time: '1 hour ago', url: 'https://bloomberg.com' },
+    { title: 'DeFi TVL surges by $12B in active multi-chain deposits', source: 'CoinDesk', time: '4 hours ago', url: 'https://coindesk.com' },
+    { title: 'USDT supply hits new high as demand increases', source: 'The Block', time: '7 hours ago', url: 'https://theblock.co' },
   ];
 
   const quickActions = [
@@ -217,65 +267,112 @@ export default function Dashboard() {
             animate={shouldReduceMotion ? {} : 'visible'}
             variants={fadeUp}
             transition={{ delay: 0.3 }}
-            className="bg-card border border-border rounded-2xl p-6 shadow-sm flex flex-col justify-between"
+            className="bg-card border border-border rounded-2xl p-4 shadow-sm h-fit"
           >
             <div>
-              <h3 className="font-bold text-lg text-foreground mb-6">Holdings</h3>
-              <motion.div 
-                variants={staggerFast}
-                className="divide-y divide-border"
-              >
-                {loading ? (
-                  Array.from({ length: 4 }).map((_, idx) => (
-                    <div key={idx} className="py-2.5">
-                      <div className="skeleton h-12 rounded-lg w-full" />
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-base text-foreground flex items-center gap-2">
+                  <span>Holdings</span>
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setHideHoldings(!hideHoldings);
+                    }}
+                    className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors cursor-pointer"
+                    title={hideHoldings ? 'Show holdings' : 'Hide holdings'}
+                  >
+                    {hideHoldings ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  </button>
+                </h3>
+              </div>
+              
+              <AnimatePresence mode="wait">
+                {hideHoldings ? (
+                  <motion.div
+                    key="hidden"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -10 }}
+                    className="py-8 flex flex-col items-center justify-center text-center space-y-2"
+                  >
+                    <EyeOff className="w-6 h-6 text-muted-foreground/40 animate-pulse" />
+                    <div>
+                      <p className="text-[11px] font-bold text-foreground">Holdings Hidden</p>
+                      <p className="text-[9px] text-muted-foreground mt-0.5 max-w-[180px]">Click the eye to reveal assets.</p>
                     </div>
-                  ))
+                  </motion.div>
                 ) : (
-                  assets.map((asset) => {
-                    const isUp = asset.pnlPercent >= 0;
-                    const formattedChange = `${isUp ? '+' : ''}${asset.pnlPercent.toFixed(2)}%`;
-                    const allocation = totalValue > 0 ? ((asset.currentValue / totalValue) * 100).toFixed(1) + '%' : '0.0%';
-                    return (
-                      <motion.div
-                        key={asset.symbol}
-                        variants={shouldReduceMotion ? {} : fadeUp}
-                        whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
-                        transition={{ duration: 0.15 }}
-                        onClick={() => navigate('/trade')}
-                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div 
-                            className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs shrink-0"
-                            style={{ backgroundColor: `${asset.color}15`, color: asset.color }}
+                  <motion.div 
+                    key="visible"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    variants={staggerFast}
+                    className="divide-y divide-border max-h-[340px] overflow-y-auto pr-1 scrollbar-thin"
+                  >
+                    {loading ? (
+                      Array.from({ length: 4 }).map((_, idx) => (
+                        <div key={idx} className="py-2">
+                          <div className="skeleton h-10 rounded-lg w-full" />
+                        </div>
+                      ))
+                    ) : (
+                      (showAllAssets ? assets : assets.slice(0, 7)).map((asset) => {
+                        const isUp = asset.pnlPercent >= 0;
+                        const formattedChange = `${isUp ? '+' : ''}${asset.pnlPercent.toFixed(2)}%`;
+                        const allocation = totalValue > 0 ? ((asset.currentValue / totalValue) * 100).toFixed(1) + '%' : '0.0%';
+                        return (
+                          <motion.div
+                            key={asset.symbol}
+                            variants={shouldReduceMotion ? {} : fadeUp}
+                            whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
+                            transition={{ duration: 0.15 }}
+                            onClick={() => navigate('/trade')}
+                            className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between rounded-lg px-1 transition-colors cursor-pointer"
                           >
-                            {asset.symbol.slice(0, 2)}
-                          </div>
-                          <div>
-                            <p className="font-bold text-sm text-foreground">{asset.name}</p>
-                            <p className="text-[10px] text-muted-foreground uppercase font-semibold">
-                              {hideBalance ? '••••' : `${asset.balance.toFixed(4)} ${asset.symbol}`}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="font-bold text-sm text-foreground font-mono">
-                            {hideBalance ? '••••' : `$${asset.currentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
-                          </p>
-                          <div className="flex items-center justify-end gap-1.5 mt-0.5">
-                            <span className={`text-[9px] font-bold ${isUp ? 'text-success' : 'text-destructive'}`}>
-                              {formattedChange}
-                            </span>
-                            <span className="text-[10px] bg-secondary text-primary font-bold px-2 py-0.5 rounded-full">{allocation}</span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div 
+                                className="w-8 h-8 rounded-full flex items-center justify-center font-bold text-[10px] shrink-0"
+                                style={{ backgroundColor: `${asset.color}15`, color: asset.color }}
+                              >
+                                {asset.symbol.slice(0, 2)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-bold text-xs text-foreground leading-tight truncate">{asset.name}</p>
+                                <p className="text-[9px] text-muted-foreground uppercase font-semibold leading-none mt-0.5 truncate">
+                                  {hideBalance ? '••••' : `${asset.balance.toFixed(4)} ${asset.symbol}`}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0 ml-2">
+                              <p className="font-bold text-xs text-foreground font-mono leading-tight">
+                                {hideBalance ? '••••' : `$${asset.currentValue.toLocaleString('en-US', { maximumFractionDigits: 2 })}`}
+                              </p>
+                              <div className="flex items-center justify-end gap-1 mt-0.5">
+                                <span className={`text-[8px] font-bold ${isUp ? 'text-success' : 'text-destructive'}`}>
+                                  {formattedChange}
+                                </span>
+                                <span className="text-[8px] bg-secondary text-primary font-bold px-1.5 py-0.5 rounded-full">{allocation}</span>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                  </motion.div>
                 )}
-              </motion.div>
+              </AnimatePresence>
             </div>
+
+            {!hideHoldings && assets.length > 7 && (
+              <button 
+                onClick={() => setShowAllAssets(!showAllAssets)}
+                className="w-full mt-3 py-1.5 border border-border hover:bg-secondary text-foreground text-[10px] font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
+              >
+                <span>{showAllAssets ? 'Show Less' : `Show More (${assets.length - 7} more)`}</span>
+                <ChevronRight className={`w-3 h-3 transition-transform ${showAllAssets ? '-rotate-90' : 'rotate-90'}`} />
+              </button>
+            )}
             
             <a href="/trade" className="text-xs font-bold text-primary hover:underline flex items-center justify-center gap-1 mt-6">
               <span>View detailed wallet balances</span>
@@ -284,7 +381,7 @@ export default function Dashboard() {
           </motion.div>
 
           {/* COL 2: Recent Transactions */}
-          <div className="space-y-6">
+          <div className="space-y-6 h-fit">
             {deposits.length > 0 && (
               <div className="bg-card border border-primary/20 rounded-2xl p-5">
                 <div className="flex items-center gap-2 mb-4">
@@ -377,73 +474,85 @@ export default function Dashboard() {
               transition={{ delay: 0.35 }}
               className="bg-card border border-border rounded-2xl p-6 shadow-sm"
             >
-            <h3 className="font-bold text-lg text-foreground mb-6">Recent Activity</h3>
-            <motion.div 
-              variants={staggerFast}
-              className="space-y-4"
-            >
-              {loading ? (
-                Array.from({ length: 4 }).map((_, idx) => (
-                  <div key={idx} className="skeleton h-12 rounded-lg w-full" />
-                ))
-              ) : (
-                dbTransactions.map((tx, i) => {
-                  const isAdd = ['buy', 'deposit', 'receive'].includes(tx.type);
-                  const formattedAmount = `${isAdd ? '+' : '-'}${tx.amount.toFixed(4)} ${tx.symbol}`;
-                  const formattedValue = `${isAdd ? '+' : '-'}$${tx.total_usd.toFixed(2)}`;
-                  const desc = tx.note || `${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)} ${tx.symbol}`;
-                  
-                  const diff = Date.now() - new Date(tx.created_at).getTime();
-                  let timeStr = 'Just now';
-                  if (diff >= 86400000) {
-                    timeStr = Math.floor(diff / 86400000) + 'd ago';
-                  } else if (diff >= 3600000) {
-                    timeStr = Math.floor(diff / 3600000) + 'h ago';
-                  } else if (diff >= 60000) {
-                    timeStr = Math.max(1, Math.floor(diff / 60000)) + 'm ago';
-                  }
+              <h3 className="font-bold text-lg text-foreground mb-6">Recent Activity</h3>
+              <motion.div 
+                variants={staggerFast}
+                className="space-y-4"
+              >
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="skeleton h-12 rounded-lg w-full" />
+                  ))
+                ) : dbTransactions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground text-center py-6">No recent transactions.</p>
+                ) : (
+                  (showAllTransactions ? dbTransactions : dbTransactions.slice(0, 7)).map((tx, i) => {
+                    const isAdd = ['buy', 'deposit', 'receive'].includes(tx.type);
+                    const formattedAmount = `${isAdd ? '+' : '-'}${tx.amount.toFixed(4)} ${tx.symbol}`;
+                    const formattedValue = `${isAdd ? '+' : '-'}$${tx.total_usd.toFixed(2)}`;
+                    const desc = tx.note || `${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)} ${tx.symbol}`;
+                    
+                    const diff = Date.now() - new Date(tx.created_at).getTime();
+                    let timeStr = 'Just now';
+                    if (diff >= 86400000) {
+                      timeStr = Math.floor(diff / 86400000) + 'd ago';
+                    } else if (diff >= 3600000) {
+                      timeStr = Math.floor(diff / 3600000) + 'h ago';
+                    } else if (diff >= 60000) {
+                      timeStr = Math.max(1, Math.floor(diff / 60000)) + 'm ago';
+                    }
 
-                  return (
-                    <motion.div 
-                      key={tx.id || i}
-                      variants={shouldReduceMotion ? {} : fadeUp}
-                      className="flex items-center justify-between"
-                    >
-                      <div className="flex gap-3">
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                          isAdd 
-                            ? 'bg-success/10 text-success' 
-                            : tx.type === 'swap' 
-                              ? 'bg-primary/10 text-primary' 
-                              : 'bg-destructive/10 text-destructive'
-                        }`}>
-                          {tx.type === 'swap' ? (
-                            <ArrowLeftRight className="w-4 h-4 text-primary" />
-                          ) : isAdd ? (
-                            <ArrowDownLeft className="w-4 h-4 text-success" />
-                          ) : (
-                            <ArrowUpRight className="w-4 h-4 text-destructive" />
-                          )}
+                    return (
+                      <motion.div 
+                        key={tx.id || i}
+                        variants={shouldReduceMotion ? {} : fadeUp}
+                        className="flex items-center justify-between"
+                      >
+                        <div className="flex gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                            isAdd 
+                              ? 'bg-success/10 text-success' 
+                              : tx.type === 'swap' 
+                                ? 'bg-primary/10 text-primary' 
+                                : 'bg-destructive/10 text-destructive'
+                          }`}>
+                            {tx.type === 'swap' ? (
+                              <ArrowLeftRight className="w-4 h-4 text-primary" />
+                            ) : isAdd ? (
+                              <ArrowDownLeft className="w-4 h-4 text-success" />
+                            ) : (
+                              <ArrowUpRight className="w-4 h-4 text-destructive" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-bold text-xs text-foreground leading-none mb-1">{desc}</p>
+                            <p className="text-[10px] text-muted-foreground">{timeStr}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="font-bold text-xs text-foreground leading-none mb-1">{desc}</p>
-                          <p className="text-[10px] text-muted-foreground">{timeStr}</p>
+                        <div className="text-right">
+                          <p className="font-bold text-xs text-foreground font-mono">{formattedAmount}</p>
+                          <p className="text-[10px] text-muted-foreground font-mono">{formattedValue}</p>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <p className="font-bold text-xs text-foreground font-mono">{formattedAmount}</p>
-                        <p className="text-[10px] text-muted-foreground font-mono">{formattedValue}</p>
-                      </div>
-                    </motion.div>
-                  );
-                })
+                      </motion.div>
+                    );
+                  })
+                )}
+              </motion.div>
+
+              {!loading && dbTransactions.length > 7 && (
+                <button 
+                  onClick={() => setShowAllTransactions(!showAllTransactions)}
+                  className="w-full mt-5 py-2 border border-border hover:bg-secondary text-foreground text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>{showAllTransactions ? 'Show Less' : `Show More (${dbTransactions.length - 7} more)`}</span>
+                  <ChevronRight className={`w-3.5 h-3.5 transition-transform ${showAllTransactions ? '-rotate-90' : 'rotate-90'}`} />
+                </button>
               )}
             </motion.div>
-          </motion.div>
           </div>
 
           {/* COL 3: Watchlist & News */}
-          <div className="space-y-6">
+          <div className="space-y-6 h-fit">
             <ReferralCard />
             
             {/* Watchlist */}
@@ -520,16 +629,38 @@ export default function Dashboard() {
               transition={{ delay: 0.45 }}
               className="bg-card border border-border rounded-2xl p-6 shadow-sm"
             >
-              <h3 className="font-bold text-lg text-foreground mb-6">Bloomberg Crypto</h3>
+              <h3 className="font-bold text-lg text-foreground mb-6 flex items-center justify-between">
+                <span>Real-time News</span>
+                <span className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  LIVE
+                </span>
+              </h3>
               <div className="space-y-4">
-                {newsList.map((news, i) => (
-                  <div key={i} className="border-l-2 border-primary/45 pl-3 py-1">
-                    <p className="text-xs text-muted-foreground mb-1 uppercase font-semibold tracking-wider">{news.source} • {news.time}</p>
-                    <a href="#" className="font-bold text-xs text-foreground hover:text-primary transition-colors line-clamp-2 leading-relaxed">
-                      {news.title}
-                    </a>
-                  </div>
-                ))}
+                {newsLoading && realtimeNews.length === 0 ? (
+                  Array.from({ length: 3 }).map((_, idx) => (
+                    <div key={idx} className="space-y-2 py-1">
+                      <div className="skeleton h-3 w-28 rounded-md" />
+                      <div className="skeleton h-4 w-full rounded-md" />
+                    </div>
+                  ))
+                ) : (
+                  newsList.map((news, i) => (
+                    <div key={i} className="border-l-2 border-primary/45 pl-3 py-1 hover:border-primary transition-colors">
+                      <p className="text-[10px] text-muted-foreground mb-1 uppercase font-semibold tracking-wider">
+                        {news.source} • {news.time}
+                      </p>
+                      <a 
+                        href={news.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="font-bold text-xs text-foreground hover:text-primary transition-colors line-clamp-2 leading-relaxed block"
+                      >
+                        {news.title}
+                      </a>
+                    </div>
+                  ))
+                )}
               </div>
             </motion.div>
 

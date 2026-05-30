@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { supabase } from '../lib/supabase';
 import { toast } from 'sonner';
@@ -8,9 +8,18 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (cooldown === 0) return;
+    const interval = setInterval(() => {
+      setCooldown(c => c - 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [cooldown]);
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     if (!email) { toast.error('Enter your email address'); return; }
     setLoading(true);
     try {
@@ -19,6 +28,7 @@ export default function ForgotPassword() {
       });
       if (error) throw error;
       setSent(true);
+      setCooldown(60);
     } catch (err: any) {
       toast.error(err.message ?? 'Failed to send reset email');
     } finally {
@@ -148,11 +158,11 @@ export default function ForgotPassword() {
               </button>
 
               <button
-                onClick={handleSubmit}
-                disabled={loading}
+                onClick={() => handleSubmit()}
+                disabled={loading || cooldown > 0}
                 className="w-full text-sm text-primary hover:underline cursor-pointer
-                  font-medium">
-                {loading ? 'Sending...' : 'Resend email'}
+                  font-medium disabled:opacity-50 disabled:cursor-not-allowed">
+                {loading ? 'Sending...' : cooldown > 0 ? `Resend email (${cooldown}s)` : 'Resend email'}
               </button>
 
               <Link to="/login"

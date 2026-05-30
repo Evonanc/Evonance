@@ -29,7 +29,12 @@ export interface Card {
   expiry: string;
   balance: number;
   spending_limit: number;
-  status: 'active'|'frozen'|'cancelled';
+  status: 'active' | 'frozen' | 'cancelled' | 'pending';
+  issuance_fee: number;
+  issuance_paid: boolean;
+  requested_at: string;
+  activated_at?: string;
+  card_type: string;
   created_at: string;
 }
 
@@ -351,11 +356,33 @@ export async function getCards(userId: string): Promise<Card[]> {
 
 export async function updateCardStatus(
   cardId: string,
-  status: 'active' | 'frozen'
+  status: 'active' | 'frozen' | 'cancelled'
 ) {
   const { error } = await supabase
     .from('cards')
     .update({ status })
+    .eq('id', cardId);
+  if (error) throw error;
+}
+
+export async function updateCardLimit(
+  cardId: string,
+  limit: number
+) {
+  const { error } = await supabase
+    .from('cards')
+    .update({ spending_limit: limit })
+    .eq('id', cardId);
+  if (error) throw error;
+}
+
+export async function updateCardName(
+  cardId: string,
+  name: string
+) {
+  const { error } = await supabase
+    .from('cards')
+    .update({ name })
     .eq('id', cardId);
   if (error) throw error;
 }
@@ -698,7 +725,45 @@ export async function getReferralSettings(
     .select('*')
     .eq('user_id', userId)
     .single();
-  if (error) return null;
+  
+  if (error || !data) {
+    // Generate a secure, unique referral code (e.g. EVO-H3K9R)
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // High legibility alphabet (no O/0, I/1 confusion)
+    let randomPart = '';
+    for (let i = 0; i < 5; i++) {
+      randomPart += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    const code = `EVO-${randomPart}`;
+
+    try {
+      const { data: insertedData, error: insertError } = await supabase
+        .from('referral_settings')
+        .insert({
+          user_id: userId,
+          code: code,
+          total_referrals: 0,
+          qualified_referrals: 0,
+          total_earned: 0
+        })
+        .select('*')
+        .single();
+      
+      if (!insertError && insertedData) {
+        return insertedData;
+      }
+    } catch (e) {
+      console.warn('Auto-creating referral settings failed, retrying search:', e);
+    }
+
+    // Attempt to re-query to handle concurrent operations
+    const { data: secondQuery } = await supabase
+      .from('referral_settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
+    return secondQuery || null;
+  }
+
   return data;
 }
 
@@ -1160,6 +1225,91 @@ export async function getInternalTransfers(
   if (error) throw error;
   return data ?? [];
 }
+
+// ── Card Issuance Fee & Requests ──────────────────────────────────
+
+export const CARD_ISSUANCE_FEE = 1.00; // $1 USDT
+
+export async function requestCard(
+  userId: string,
+  cardName: string = 'My Card'
+): Promise<string> {
+  // Check USDT balance
+  const wallet = await getWallet(userId, 'USDT');
+  const balance = wallet?.balance ?? 0;
+  if (balance < CARD_ISSUANCE_FEE) {
+    throw new Error(
+      `Insufficient balance. Need $${CARD_ISSUANCE_FEE} USDT ` +
+      `to issue a card. Current balance: $${balance.toFixed(2)}`
+    );
+  }
+
+  // Check card limit (max 5 cards per user)
+  const { count } = await supabase
+    .from('cards')
+    .select('*', { count: 'exact', head: true })
+    .eq('user_id', userId)
+    .neq('status', 'cancelled');
+  if ((count ?? 0) >= 5) {
+    throw new Error('Maximum 5 cards per account');
+  }
+
+  // Deduct $1 issuance fee
+  await upsertWallet(
+    userId, 'USDT', 'Tether',
+    balance - CARD_ISSUANCE_FEE, 1
+  );
+
+  // Generate card details
+  const last4 = Math.floor(1000 + Math.random() * 9000).toString();
+  const now = new Date();
+  const expYear = (now.getFullYear() + 4).toString().slice(-2);
+  const expMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const expiry = `${expMonth}/${expYear}`;
+
+  // Create card as pending
+  const { data: card, error } = await supabase
+    .from('cards')
+    .insert({
+      user_id: userId,
+      name: cardName,
+      last4,
+      expiry,
+      balance: 0,
+      spending_limit: 5000,
+      status: 'pending',         // pending until admin activates
+      issuance_fee: CARD_ISSUANCE_FEE,
+      issuance_paid: true,
+      requested_at: new Date().toISOString(),
+      card_type: 'virtual',
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  // Record fee transaction
+  await supabase.from('card_issuance_fees').insert({
+    user_id: userId,
+    card_id: card.id,
+    amount: CARD_ISSUANCE_FEE,
+    status: 'paid',
+  });
+
+  // Record in transactions
+  await addTransaction(userId, {
+    type: 'withdraw',
+    symbol: 'USDT',
+    amount: CARD_ISSUANCE_FEE,
+    price_usd: 1,
+    total_usd: CARD_ISSUANCE_FEE,
+    fee_usd: 0,
+    status: 'completed',
+    note: `Card issuance fee — ${cardName}`,
+  });
+
+  return card.id;
+}
+
 
 
 

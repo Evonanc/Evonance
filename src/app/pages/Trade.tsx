@@ -83,30 +83,48 @@ export default function Trade() {
     return () => clearInterval(interval);
   }, [lastUpdated]);
 
-  const pairs: Pair[] = useMemo(() => {
-    const staticPairs = [
-      { symbol: 'BTC/USDT', name: 'BTC', coinId: 'BTCUSDT' },
-      { symbol: 'ETH/USDT', name: 'ETH', coinId: 'ETHUSDT' },
-      { symbol: 'SOL/USDT', name: 'SOL', coinId: 'SOLUSDT' },
-      { symbol: 'BNB/USDT', name: 'BNB', coinId: 'BNBUSDT' },
-    ];
+  // ── Admin-managed pairs from DB ──────────────────────────────────
+  const DEFAULT_PAIRS = [
+    { symbol: 'BTC', name: 'Bitcoin',  pair_label: 'BTC/USDT' },
+    { symbol: 'ETH', name: 'Ethereum', pair_label: 'ETH/USDT' },
+    { symbol: 'SOL', name: 'Solana',   pair_label: 'SOL/USDT' },
+    { symbol: 'BNB', name: 'BNB',      pair_label: 'BNB/USDT' },
+  ];
 
-    return staticPairs.map(p => {
-      const coin = coins.find(c => c.symbol === p.name);
+  const [dbPairDefs, setDbPairDefs] = useState<{ symbol: string; name: string; pair_label: string }[]>(DEFAULT_PAIRS);
+
+  useEffect(() => {
+    import('../lib/supabase').then(({ supabase }) => {
+      supabase
+        .from('trade_pairs')
+        .select('symbol, name, pair_label')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .then(({ data, error }) => {
+          if (!error && data && data.length > 0) {
+            setDbPairDefs(data);
+          }
+        });
+    });
+  }, []);
+
+  const pairs: Pair[] = useMemo(() => {
+    return dbPairDefs.map(p => {
+      const coin = coins.find(c => c.symbol === p.symbol);
       if (!coin) {
-        // Fallback to static mock values
-        if (p.coinId === 'BTCUSDT') return { symbol: 'BTC/USDT', name: 'BTC', price: 67234.56, priceString: '$67,234.56', change: '+2.34%', isUp: true, vol: '2.4B', open24h: '$65,712.00', high24h: '$67,890.00', low24h: '$65,210.00' };
-        if (p.coinId === 'ETHUSDT') return { symbol: 'ETH/USDT', name: 'ETH', price: 3456.78, priceString: '$3,456.78', change: '-1.23%', isUp: false, vol: '890M', open24h: '$3,500.12', high24h: '$3,540.00', low24h: '$3,410.00' };
-        if (p.coinId === 'SOLUSDT') return { symbol: 'SOL/USDT', name: 'SOL', price: 142.34, priceString: '$142.34', change: '+5.67%', isUp: true, vol: '234M', open24h: '$134.70', high24h: '$145.20', low24h: '$133.50' };
-        return { symbol: 'BNB/USDT', name: 'BNB', price: 589.12, priceString: '$589.12', change: '+3.45%', isUp: true, vol: '456M', open24h: '$569.30', high24h: '$595.00', low24h: '$565.00' };
+        if (p.symbol === 'BTC') return { symbol: p.pair_label, name: p.symbol, price: 67234.56, priceString: '$67,234.56', change: '+2.34%', isUp: true, vol: '2.4B', open24h: '$65,712.00', high24h: '$67,890.00', low24h: '$65,210.00' };
+        if (p.symbol === 'ETH') return { symbol: p.pair_label, name: p.symbol, price: 3456.78, priceString: '$3,456.78', change: '-1.23%', isUp: false, vol: '890M', open24h: '$3,500.12', high24h: '$3,540.00', low24h: '$3,410.00' };
+        if (p.symbol === 'SOL') return { symbol: p.pair_label, name: p.symbol, price: 142.34, priceString: '$142.34', change: '+5.67%', isUp: true, vol: '234M', open24h: '$134.70', high24h: '$145.20', low24h: '$133.50' };
+        if (p.symbol === 'BNB') return { symbol: p.pair_label, name: p.symbol, price: 589.12, priceString: '$589.12', change: '+3.45%', isUp: true, vol: '456M', open24h: '$569.30', high24h: '$595.00', low24h: '$565.00' };
+        return { symbol: p.pair_label, name: p.symbol, price: 1.00, priceString: '$1.00', change: '+0.00%', isUp: true, vol: 'N/A', open24h: '$1.00', high24h: '$1.00', low24h: '$1.00' };
       }
 
       const isUp = coin.change24h >= 0;
       const changeString = `${isUp ? '+' : ''}${coin.change24h.toFixed(2)}%`;
       
       return {
-        symbol: p.symbol,
-        name: p.name,
+        symbol: p.pair_label,
+        name: p.symbol,
         price: coin.price,
         priceString: `$${formatPrice(coin.price)}`,
         change: changeString,
@@ -117,7 +135,7 @@ export default function Trade() {
         low24h: `$${formatPrice(coin.low24h)}`,
       };
     });
-  }, [coins]);
+  }, [coins, dbPairDefs]);
 
   const selectedPair = useMemo(() => {
     return pairs.find(p => p.symbol === selectedPairSymbol) || pairs[0];

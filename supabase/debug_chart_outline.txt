@@ -1,0 +1,13 @@
+#!/usr/bin/env node
+/**
+ * EVONANCE — Debug Portfolio Chart
+ * Run: node supabase/debug_chart.mjs
+ */
+
+import { createClient } from '@supabase/supabase-js';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { buildPortfolioHistory } from '../src/app/lib/portfolioHistory.js'; // wait, it is a typescript file, we can't import .ts directly in node.js unless using ts-node or transpiling it.
+
+// Let's implement a standalone TS runner or a simple raw node script to inspect buildPortfolioHistory logic.

@@ -76,7 +76,10 @@ export async function getAdminRole(): Promise<AdminRole | null> {
     .eq('user_id', user.id)
     .single();
 
-  if (error) return null;
+  if (error) {
+    console.error('[AdminGuard] admin_roles query error:', error.code, error.message, '| user_id:', user.id);
+    return null;
+  }
   return data;
 }
 
@@ -530,5 +533,93 @@ export async function rejectDeposit(
     { amount: dr.amount, reason }
   );
 }
+
+// ── Virtual Cards Admin Management ────────────────────────────────
+
+export async function getPendingCards(): Promise<any[]> {
+  const { data, error } = await supabase
+    .from('cards')
+    .select(`
+      *,
+      profiles:user_id (email, full_name, kyc_status)
+    `)
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: true });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function activateCard(
+  cardId: string,
+  adminId: string
+): Promise<void> {
+  const { data: card } = await supabase
+    .from('cards')
+    .select('*')
+    .eq('id', cardId)
+    .single();
+  if (!card) throw new Error('Card not found');
+
+  await supabase
+    .from('cards')
+    .update({
+      status: 'active',
+      activated_at: new Date().toISOString(),
+      activated_by: adminId,
+    })
+    .eq('id', cardId);
+
+  const { createNotification } = await import('./db');
+  await createNotification(
+    card.user_id, 'card',
+    `Your ${card.name} is ready!`,
+    `Your virtual card ending in ${card.last4} has been activated. Fund it from your wallet to start spending.`,
+    '/cards'
+  );
+
+  await logAdminAction(
+    'card_activated', 'card', cardId,
+    { user_id: card.user_id, name: card.name }
+  );
+}
+
+export async function rejectCardRequest(
+  cardId: string,
+  adminId: string,
+  reason: string
+): Promise<void> {
+  const { data: card } = await supabase
+    .from('cards')
+    .select('*')
+    .eq('id', cardId)
+    .single();
+  if (!card) throw new Error('Card not found');
+
+  // Refund the $1 fee
+  const { getWallet, upsertWallet, createNotification } = await import('./db');
+  const wallet = await getWallet(card.user_id, 'USDT');
+  await upsertWallet(
+    card.user_id, 'USDT', 'Tether',
+    (wallet?.balance ?? 0) + card.issuance_fee, 1
+  );
+
+  await supabase
+    .from('cards')
+    .update({ status: 'cancelled' })
+    .eq('id', cardId);
+
+  await createNotification(
+    card.user_id, 'card',
+    'Card request rejected — fee refunded',
+    `Your card request was rejected: ${reason}. The $${card.issuance_fee} fee has been refunded to your wallet.`,
+    '/cards'
+  );
+
+  await logAdminAction(
+    'card_rejected', 'card', cardId,
+    { reason }
+  );
+}
+
 
 

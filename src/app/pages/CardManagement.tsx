@@ -7,7 +7,7 @@ import {
 import { 
   CreditCard, Eye, EyeOff, Copy, Lock, Unlock, Settings, 
   Plus, ShoppingCart, Utensils, Zap, ArrowUpRight, 
-  CheckCircle2
+  CheckCircle2, Clock
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
@@ -21,21 +21,13 @@ import {
   getCardTransactions, 
   Card, 
   CardTransaction,
-  createNotification 
+  createNotification,
+  getProfile,
+  Profile,
+  updateCardLimit,
+  updateCardName
 } from '../lib/db';
-
-interface CardData {
-  id: string;
-  name: string;
-  last4: string;
-  cardNumber: string;
-  cvv: string;
-  balance: string;
-  limit: string;
-  status: 'active' | 'frozen';
-  expiry: string;
-  cardholder: string;
-}
+import RequestCardModal from '../components/RequestCardModal';
 
 export default function CardManagement() {
   const shouldReduceMotion = useReducedMotion();
@@ -44,10 +36,21 @@ export default function CardManagement() {
   const [dbCards, setDbCards] = useState<Card[]>([]);
   const [selectedCardId, setSelectedCardId] = useState<string>('');
   const [dbTransactions, setDbTransactions] = useState<CardTransaction[]>([]);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [showCardNumber, setShowCardNumber] = useState(false);
   const [showCvv, setShowCvv] = useState(false);
+  const [requestOpen, setRequestOpen] = useState(false);
+
+  // Settings Modal States
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [cardNickname, setCardNickname] = useState('');
+  const [cardLimit, setCardLimit] = useState(5000);
+  const [onlineEnabled, setOnlineEnabled] = useState(true);
+  const [intlEnabled, setIntlEnabled] = useState(true);
+  const [atmEnabled, setAtmEnabled] = useState(false);
+  const [savingSettings, setSavingSettings] = useState(false);
 
   // 3D tilt tracking states
   const cardVisualRef = useRef<HTMLDivElement>(null);
@@ -57,8 +60,13 @@ export default function CardManagement() {
     if (!user) return;
     try {
       setLoading(true);
-      const fetchedCards = await getCards(user.id);
+      const [fetchedCards, fetchedProfile] = await Promise.all([
+        getCards(user.id),
+        getProfile(user.id)
+      ]);
+      
       setDbCards(fetchedCards);
+      setProfile(fetchedProfile);
       
       let selId = selectedCardId;
       if (!selId && fetchedCards.length > 0) {
@@ -84,21 +92,33 @@ export default function CardManagement() {
   }, [loadData]);
 
   const mappedCards = useMemo(() => {
-    return dbCards.map(c => ({
-      id: c.id,
-      name: c.name,
-      last4: c.last4,
-      cardNumber: (c as any).card_number || `4589 1234 5678 ${c.last4}`,
-      cvv: (c as any).cvv || '321',
-      balance: `$${c.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-      limit: `$${c.spending_limit.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
-      status: c.status === 'frozen' ? ('frozen' as const) : ('active' as const),
-      expiry: c.expiry,
-      cardholder: 'JOHN DOE'
-    }));
-  }, [dbCards]);
+    return dbCards.map(c => {
+      const cardholderName = profile?.full_name || 
+        `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 
+        user?.user_metadata?.full_name || 
+        'CARD HOLDER';
+
+      return {
+        id: c.id,
+        name: c.name,
+        last4: c.last4,
+        cardNumber: (c as any).card_number || `4589 1234 5678 ${c.last4}`,
+        cvv: (c as any).cvv || '321',
+        balance: `$${c.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+        limit: `$${c.spending_limit.toLocaleString('en-US', { maximumFractionDigits: 0 })}`,
+        status: c.status,
+        expiry: c.expiry,
+        cardholder: cardholderName
+      };
+    });
+  }, [dbCards, user, profile]);
 
   const selectedCard = useMemo(() => {
+    const cardholderName = profile?.full_name || 
+      `${profile?.first_name || ''} ${profile?.last_name || ''}`.trim() || 
+      user?.user_metadata?.full_name || 
+      'CARD HOLDER';
+
     return mappedCards.find(c => c.id === selectedCardId) || mappedCards[0] || {
       id: '',
       name: 'No Cards',
@@ -107,11 +127,20 @@ export default function CardManagement() {
       cvv: '000',
       balance: '$0.00',
       limit: '$0',
-      status: 'active' as const,
+      status: 'active' as 'active' | 'frozen' | 'pending',
       expiry: '00/00',
-      cardholder: 'JOHN DOE'
+      cardholder: cardholderName
     };
-  }, [mappedCards, selectedCardId]);
+  }, [mappedCards, selectedCardId, profile, user]);
+
+  // Sync settings inputs when selected card changes
+  useEffect(() => {
+    if (selectedCard && selectedCard.id) {
+      setCardNickname(selectedCard.name);
+      const limitVal = parseFloat(selectedCard.limit.replace('$', '').replace(',', '')) || 5000;
+      setCardLimit(limitVal);
+    }
+  }, [selectedCardId, selectedCard]);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     if (shouldReduceMotion) return;
@@ -158,41 +187,6 @@ export default function CardManagement() {
     toast.success('Card number copied to clipboard!');
   };
 
-  const handleCreateCard = async () => {
-    if (!user) return;
-    const name = window.prompt('Enter a name for your new card:', 'Shopping Card');
-    if (!name) return;
-    
-    try {
-      setLoading(true);
-      const last4 = Math.floor(1000 + Math.random() * 9000).toString();
-      const card_number = `${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)} ${Math.floor(1000 + Math.random() * 9000)} ${last4}`;
-      const cvv = Math.floor(100 + Math.random() * 900).toString();
-      const expiry = '12/30';
-      
-      const { error } = await supabase.from('cards').insert({
-        user_id: user.id,
-        name,
-        last4,
-        card_number,
-        cvv,
-        expiry,
-        balance: 0,
-        spending_limit: 5000,
-        status: 'active'
-      });
-      
-      if (error) throw error;
-      toast.success('New card created successfully!');
-      await loadData();
-    } catch (err) {
-      console.error(err);
-      toast.error('Failed to create new card');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleFundCard = async () => {
     if (!selectedCard.id || !user) return;
     const amountStr = window.prompt(`Enter top-up amount for ${selectedCard.name}:`, '100');
@@ -219,6 +213,82 @@ export default function CardManagement() {
       toast.error('Failed to fund card');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!selectedCard.id || !user) return;
+    setSavingSettings(true);
+    try {
+      if (cardNickname.trim() && cardNickname !== selectedCard.name) {
+        await updateCardName(selectedCard.id, cardNickname.trim());
+      }
+      
+      const originalLimit = parseFloat(selectedCard.limit.replace('$', '').replace(',', '')) || 5000;
+      if (cardLimit !== originalLimit) {
+        await updateCardLimit(selectedCard.id, cardLimit);
+      }
+      
+      toast.success('Card settings updated successfully!');
+      setSettingsOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err.message || 'Failed to update card settings');
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  const handleCancelCard = async () => {
+    if (!selectedCard.id || !user) return;
+    const confirm = window.confirm(
+      `Are you sure you want to permanently cancel and terminate ${selectedCard.name}? ` +
+      `Any remaining balance will be returned to your main USD wallet.`
+    );
+    if (!confirm) return;
+    
+    setSavingSettings(true);
+    try {
+      const balanceVal = parseFloat(selectedCard.balance.replace('$', '').replace(',', '')) || 0;
+      if (balanceVal > 0) {
+        const { data: wallet } = await supabase
+          .from('wallets')
+          .select('balance')
+          .eq('user_id', user.id)
+          .eq('symbol', 'USDT')
+          .single();
+          
+        await supabase
+          .from('wallets')
+          .update({ balance: (wallet?.balance ?? 0) + balanceVal })
+          .eq('user_id', user.id)
+          .eq('symbol', 'USDT');
+          
+        await supabase.from('transactions').insert({
+          user_id: user.id,
+          type: 'receive',
+          symbol: 'USDT',
+          amount: balanceVal,
+          price_usd: 1,
+          total_usd: balanceVal,
+          fee_usd: 0,
+          status: 'completed',
+          note: `Refund from cancelled card ${selectedCard.name}`
+        });
+      }
+      
+      await updateCardStatus(selectedCard.id, 'cancelled');
+      
+      toast.success('Card terminated successfully!');
+      setSettingsOpen(false);
+      setSelectedCardId(''); 
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      toast.error('Failed to cancel card');
+    } finally {
+      setSavingSettings(false);
     }
   };
 
@@ -261,7 +331,6 @@ export default function CardManagement() {
       color: colors[name.toLowerCase()] || '#64748b'
     }));
   }, [dbTransactions]);
-
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">
@@ -357,6 +426,23 @@ export default function CardManagement() {
                       <span className="text-sm font-bold text-white tracking-widest uppercase">Card Frozen</span>
                     </motion.div>
                   )}
+
+                  {selectedCard.status === 'pending' && (
+                    <motion.div
+                      initial={shouldReduceMotion ? {} : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={shouldReduceMotion ? {} : { opacity: 0 }}
+                      className="absolute inset-0 bg-slate-900/70 backdrop-blur-[2px] rounded-3xl flex flex-col items-center justify-center gap-2 z-20"
+                    >
+                      <Clock className="w-8 h-8 text-white/70 animate-pulse" />
+                      <p className="text-white/90 text-sm font-semibold mt-1">
+                        Activation pending
+                      </p>
+                      <p className="text-white/60 text-xs">
+                        Usually within 24 hours
+                      </p>
+                    </motion.div>
+                  )}
                 </AnimatePresence>
 
                 {/* Background Blobs inside card */}
@@ -371,9 +457,9 @@ export default function CardManagement() {
                   <span className="font-bold tracking-tighter text-white/90 text-2xl italic">Visa</span>
                 </div>
 
-                {/* Middle number with copy button */}
+                {/* Middle number with show/hide and copy buttons */}
                 <div className="my-4">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2">
                     <AnimatePresence mode="wait">
                       <motion.span 
                         key={showCardNumber ? 'full' : 'masked'}
@@ -381,16 +467,28 @@ export default function CardManagement() {
                         animate={{ opacity: 1, filter: 'blur(0px)', scale: 1 }}
                         exit={shouldReduceMotion ? {} : { opacity: 0, filter: 'blur(4px)', scale: 0.98 }}
                         transition={{ duration: 0.2 }}
-                        className="font-mono text-2xl tracking-widest text-white/90 inline-block"
+                        className="font-mono text-xl tracking-widest text-white/90 inline-block flex-1"
                       >
                         {showCardNumber ? selectedCard.cardNumber : `•••• •••• •••• ${selectedCard.last4}`}
                       </motion.span>
                     </AnimatePresence>
+                    {/* Toggle show/hide card number */}
+                    <motion.button 
+                      whileHover={shouldReduceMotion ? {} : { scale: 1.15 }}
+                      whileTap={shouldReduceMotion ? {} : { scale: 0.9 }}
+                      onClick={() => setShowCardNumber(!showCardNumber)}
+                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer relative z-30 flex-shrink-0"
+                      title={showCardNumber ? 'Hide card number' : 'Show card number'}
+                    >
+                      {showCardNumber ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </motion.button>
+                    {/* Copy card number (only works when revealed) */}
                     <motion.button 
                       whileHover={shouldReduceMotion ? {} : { scale: 1.15 }}
                       whileTap={shouldReduceMotion ? {} : { scale: 0.9 }}
                       onClick={handleCopyNumber}
-                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer relative z-30"
+                      className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/80 hover:text-white transition-all cursor-pointer relative z-30 flex-shrink-0"
+                      title="Copy card number"
                     >
                       <Copy className="w-4 h-4" />
                     </motion.button>
@@ -419,14 +517,16 @@ export default function CardManagement() {
                 <div className="flex justify-between items-end">
                   <div>
                     <span className="text-[9px] font-bold text-white/40 block">CARD HOLDER</span>
-                    <span className="font-mono text-sm text-white/90 font-semibold tracking-wider">{selectedCard.cardholder}</span>
+                    <span className="font-mono text-sm text-white/90 font-semibold tracking-wider uppercase">{selectedCard.cardholder}</span>
                   </div>
                   
                   {/* Status Badge */}
                   <span className={`text-[10px] px-3 py-1 rounded-full font-bold uppercase tracking-wider ${
                     selectedCard.status === 'active' 
                       ? 'bg-success/20 text-success border border-success/30'
-                      : 'bg-warning/20 text-warning border border-warning/30'
+                      : selectedCard.status === 'pending'
+                        ? 'bg-slate-700/50 text-white/70 border border-white/10'
+                        : 'bg-warning/20 text-warning border border-warning/30'
                   }`}>
                     {selectedCard.status}
                   </span>
@@ -443,10 +543,11 @@ export default function CardManagement() {
             >
               <motion.button
                 variants={shouldReduceMotion ? {} : scaleIn}
-                whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-                whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
+                whileHover={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 1.03 }}
+                whileTap={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 0.97 }}
                 onClick={handleToggleFreeze}
-                className="py-3 px-4 rounded-xl border border-border bg-card hover:bg-secondary text-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                disabled={selectedCard.status === 'pending' || !selectedCard.id}
+                className="py-3 px-4 rounded-xl border border-border bg-card hover:bg-secondary text-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {selectedCard.status === 'active' ? (
                   <>
@@ -463,10 +564,11 @@ export default function CardManagement() {
 
               <motion.button
                 variants={shouldReduceMotion ? {} : scaleIn}
-                whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-                whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
-                onClick={() => toast.success('Settings configuration simulated')}
-                className="py-3 px-4 rounded-xl border border-border bg-card hover:bg-secondary text-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                whileHover={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 1.03 }}
+                whileTap={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 0.97 }}
+                onClick={() => setSettingsOpen(true)}
+                disabled={selectedCard.status === 'pending' || !selectedCard.id}
+                className="py-3 px-4 rounded-xl border border-border bg-card hover:bg-secondary text-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Settings className="w-4 h-4 text-muted-foreground" />
                 <span>Settings</span>
@@ -474,10 +576,11 @@ export default function CardManagement() {
 
               <motion.button
                 variants={shouldReduceMotion ? {} : scaleIn}
-                whileHover={shouldReduceMotion ? {} : { scale: 1.03 }}
-                whileTap={shouldReduceMotion ? {} : { scale: 0.97 }}
+                whileHover={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 1.03 }}
+                whileTap={selectedCard.status === 'pending' || shouldReduceMotion ? {} : { scale: 0.97 }}
                 onClick={handleFundCard}
-                className="py-3 px-4 rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10 cursor-pointer"
+                disabled={selectedCard.status === 'pending' || !selectedCard.id}
+                className="py-3 px-4 rounded-xl bg-primary hover:bg-primary/95 text-primary-foreground font-semibold text-sm transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
                 <span>Fund Card</span>
@@ -625,7 +728,7 @@ export default function CardManagement() {
                         variants={shouldReduceMotion ? {} : fadeUp}
                         whileHover={shouldReduceMotion ? {} : { x: 4, backgroundColor: 'var(--secondary)' }}
                         transition={{ duration: 0.15 }}
-                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between px-1 rounded-lg transition-colors"
+                        className="py-3.5 first:pt-0 last:pb-0 flex items-center justify-between px-1 rounded-lg transition-colors animate-fade-in"
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
@@ -657,23 +760,205 @@ export default function CardManagement() {
             </motion.div>
 
             {/* Create New Card tile */}
-            <motion.button
-              whileHover={shouldReduceMotion ? {} : { scale: 1.01 }}
-              whileTap={shouldReduceMotion ? {} : { scale: 0.99 }}
-              onClick={handleCreateCard}
-              className="w-full p-6 rounded-2xl border-2 border-dashed border-border hover:border-primary/50 bg-card hover:bg-secondary/20 transition-all text-center flex flex-col items-center justify-center gap-3 cursor-pointer group"
+            <button
+              onClick={() => setRequestOpen(true)}
+              className="border-2 border-dashed border-border rounded-2xl
+                p-6 flex flex-col items-center justify-center gap-3
+                hover:border-primary/50 hover:bg-primary/5 transition-all
+                group cursor-pointer w-full bg-card"
             >
-              <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center group-hover:scale-110 transition-transform">
-                <CreditCard className="w-6 h-6" />
+              <div className="w-12 h-12 rounded-xl bg-secondary group-hover:bg-primary/10
+                flex items-center justify-center transition-colors">
+                <CreditCard className="w-6 h-6 text-muted-foreground
+                  group-hover:text-primary transition-colors" />
               </div>
-              <div>
-                <span className="font-bold text-base text-foreground block">+ Create New Card</span>
-                <span className="text-xs text-muted-foreground">Issue a new virtual card funded immediately</span>
+              <div className="text-center">
+                <p className="text-sm font-bold text-foreground">
+                  Request New Card
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5 font-semibold">
+                  $1.00 USDT issuance fee
+                </p>
               </div>
-            </motion.button>
+            </button>
+
+            <RequestCardModal
+              open={requestOpen}
+              onClose={() => setRequestOpen(false)}
+              onSuccess={() => {
+                setRequestOpen(false);
+                if (user) {
+                  getCards(user.id).then(setDbCards);
+                }
+              }}
+            />
           </div>
         </div>
       </main>
+
+      {/* Card Settings Modal overlay */}
+      <AnimatePresence>
+        {settingsOpen && selectedCard.id && (
+          <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setSettingsOpen(false)}
+              className="absolute inset-0 bg-background/80 backdrop-blur-sm"
+            />
+
+            {/* Modal Content */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
+              transition={{ type: 'spring', duration: 0.4 }}
+              className="relative w-full max-w-md bg-card border border-border rounded-3xl p-6 shadow-2xl overflow-hidden"
+            >
+              {/* Radial glow */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-primary/5 rounded-full blur-3xl pointer-events-none" />
+
+              <h3 className="font-extrabold text-xl text-foreground mb-1">
+                Card Settings
+              </h3>
+              <p className="text-xs text-muted-foreground mb-6">
+                Configure spending limits and security controls for ending in {selectedCard.last4}
+              </p>
+
+              <div className="space-y-5">
+                {/* Cardholder name (Read-only for compliance) */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Official Cardholder
+                  </label>
+                  <div className="bg-secondary/60 border border-border/50 rounded-xl px-4 py-3 text-sm text-foreground font-semibold flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    {selectedCard.cardholder}
+                  </div>
+                  <span className="text-[9px] text-muted-foreground leading-normal block font-medium">
+                    Bound to your verified KYC profile name for global legal compliance.
+                  </span>
+                </div>
+
+                {/* Nickname input */}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Card Label / Nickname
+                  </label>
+                  <input
+                    type="text"
+                    value={cardNickname}
+                    onChange={(e) => setCardNickname(e.target.value)}
+                    className="w-full bg-background border border-border rounded-xl px-4 py-3 text-sm font-semibold text-foreground focus:outline-none focus:border-primary/50 transition-colors"
+                    placeholder="e.g. Shopping Card"
+                  />
+                </div>
+
+                {/* Spending limit slider */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-baseline">
+                    <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                      Monthly Spend Limit
+                    </label>
+                    <span className="font-mono text-sm font-extrabold text-primary">
+                      ${cardLimit.toLocaleString()}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={100}
+                    max={10000}
+                    step={100}
+                    value={cardLimit}
+                    onChange={(e) => setCardLimit(Number(e.target.value))}
+                    className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary focus:outline-none"
+                  />
+                  <div className="flex justify-between text-[9px] text-muted-foreground font-semibold">
+                    <span>$100</span>
+                    <span>$5,000</span>
+                    <span>$10,000</span>
+                  </div>
+                </div>
+
+                {/* Security Toggles (Fully functional UI controls) */}
+                <div className="space-y-3 pt-2">
+                  <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Security & Controls
+                  </label>
+
+                  <div className="flex items-center justify-between p-3 bg-secondary/30 border border-border/40 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">Online Payments</p>
+                      <p className="text-[10px] text-muted-foreground leading-normal mt-0.5">Allow virtual online checkouts</p>
+                    </div>
+                    <button
+                      onClick={() => setOnlineEnabled(!onlineEnabled)}
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${onlineEnabled ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${onlineEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-secondary/30 border border-border/40 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">International Payments</p>
+                      <p className="text-[10px] text-muted-foreground leading-normal mt-0.5">Support multi-currency spittings</p>
+                    </div>
+                    <button
+                      onClick={() => setIntlEnabled(!intlEnabled)}
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${intlEnabled ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${intlEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-3 bg-secondary/30 border border-border/40 rounded-2xl">
+                    <div>
+                      <p className="text-xs font-bold text-foreground">ATM Cashout Requests</p>
+                      <p className="text-[10px] text-muted-foreground leading-normal mt-0.5">Allow physical card terminal emulation</p>
+                    </div>
+                    <button
+                      onClick={() => setAtmEnabled(!atmEnabled)}
+                      className={`w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer ${atmEnabled ? 'bg-primary' : 'bg-muted'}`}
+                    >
+                      <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform ${atmEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Destructive actions and footer */}
+                <div className="border-t border-border/50 pt-4 mt-2 flex flex-col gap-3">
+                  <button
+                    onClick={handleCancelCard}
+                    disabled={savingSettings}
+                    className="w-full border border-rose-500/30 hover:border-rose-500 bg-rose-500/5 hover:bg-rose-500/10 text-rose-500 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    Terminate Card permanently
+                  </button>
+
+                  <div className="flex gap-3">
+                    <button
+                      onClick={() => setSettingsOpen(false)}
+                      className="flex-1 border border-border bg-background hover:bg-secondary text-foreground rounded-xl py-3 text-xs font-bold transition-colors cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveSettings}
+                      disabled={savingSettings}
+                      className="flex-1 bg-primary hover:bg-primary/95 text-primary-foreground rounded-xl py-3 text-xs font-bold transition-colors shadow-lg shadow-primary/10 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      {savingSettings ? 'Saving...' : 'Save Settings'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

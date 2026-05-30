@@ -125,7 +125,7 @@ function Navigation({ isPublic = false }: NavigationProps) {
         <div className="flex items-center justify-between h-16">
           {/* Left: Logo */}
           <div className="flex items-center">
-            <Link to="/" className="flex items-center gap-2">
+            <Link to={user ? "/dashboard" : "/"} className="flex items-center gap-2">
               <motion.div 
                 whileHover={shouldReduceMotion ? {} : { scale: 1.05 }}
                 whileTap={shouldReduceMotion ? {} : { scale: 0.95 }}
@@ -155,7 +155,7 @@ function Navigation({ isPublic = false }: NavigationProps) {
               return isPublic ? (
                 <motion.a
                   key={link.label}
-                  href={link.href}
+                  href={location.pathname === '/' ? link.href : '/' + link.href}
                   className={linkClasses}
                   {...linkProps}
                 >
@@ -454,7 +454,7 @@ function Navigation({ isPublic = false }: NavigationProps) {
                 >
                   {isPublic ? (
                     <a
-                      href={link.href}
+                      href={location.pathname === '/' ? link.href : '/' + link.href}
                       onClick={() => setMobileMenuOpen(false)}
                       className="text-base font-medium text-muted-foreground hover:text-primary transition-colors block py-1"
                     >

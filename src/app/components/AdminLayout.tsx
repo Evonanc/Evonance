@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Users, ArrowLeftRight,
   ShieldCheck, Gift, ScrollText, Settings,
   LogOut, Sun, Moon, Menu, X,
-  ChevronRight, AlertTriangle, ArrowUpRight, ArrowDownLeft
+  ChevronRight, AlertTriangle, ArrowUpRight, ArrowDownLeft,
+  CreditCard, TrendingUp
 } from 'lucide-react';
 
 const NAV_ITEMS = [
@@ -45,6 +46,20 @@ const NAV_ITEMS = [
     icon: ArrowDownLeft,
     href: '/admin/deposits',
     roles: ['super_admin','admin','finance','compliance'],
+  },
+  {
+    id: 'cards',
+    label: 'Cards Queue',
+    icon: CreditCard,
+    href: '/admin/cards',
+    roles: ['super_admin','admin','finance','compliance'],
+  },
+  {
+    id: 'trade-pairs',
+    label: 'Trade Pairs',
+    icon: TrendingUp,
+    href: '/admin/trade-pairs',
+    roles: ['super_admin','admin','finance'],
   },
   {
     id: 'kyc',
@@ -90,8 +105,24 @@ export default function AdminLayout({
   const { theme, setTheme } = useTheme();
   const [role, setRole] = useState<AdminRole | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [pendingCardsCount, setPendingCardsCount] = useState(0);
 
   useEffect(() => { getAdminRole().then(setRole); }, []);
+
+  useEffect(() => {
+    supabase
+      .from('cards')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'pending')
+      .then(
+        ({ count }) => {
+          setPendingCardsCount(count ?? 0);
+        },
+        (err) => {
+          console.error(err);
+        }
+      );
+  }, []);
 
   const visibleNav = NAV_ITEMS.filter(item =>
     role && item.roles.includes(role.role)
@@ -170,7 +201,12 @@ export default function AdminLayout({
                   }`}>
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 {item.label}
-                {isActive && (
+                {item.id === 'cards' && pendingCardsCount > 0 && (
+                  <span className="bg-destructive text-destructive-foreground text-[10px] font-bold px-2 py-0.5 rounded-full ml-auto">
+                    {pendingCardsCount}
+                  </span>
+                )}
+                {isActive && item.id !== 'cards' && (
                   <ChevronRight className="w-3.5 h-3.5 ml-auto" />
                 )}
               </Link>

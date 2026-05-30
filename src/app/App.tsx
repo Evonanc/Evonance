@@ -32,7 +32,7 @@
   This is already used in src/app/lib/email.ts via VITE_SUPABASE_URL
 */
 
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router';
 import { ThemeProvider } from 'next-themes';
 import { Toaster } from 'sonner';
@@ -80,14 +80,17 @@ const Notifications  = lazy(() => import('./pages/Notifications'));
 
 // Admin pages — only loaded if user is admin
 const AdminOverview     = lazy(() => import('./pages/admin/AdminOverview'));
+const AdminLogin        = lazy(() => import('./pages/admin/AdminLogin'));
 const AdminUsers        = lazy(() => import('./pages/admin/AdminUsers'));
 const AdminTransactions = lazy(() => import('./pages/admin/AdminTransactions'));
 const AdminKYC          = lazy(() => import('./pages/admin/AdminKYC'));
 const AdminReferrals    = lazy(() => import('./pages/admin/AdminReferrals'));
 const AdminWithdrawals  = lazy(() => import('./pages/admin/AdminWithdrawals'));
 const AdminDeposits     = lazy(() => import('./pages/admin/AdminDeposits'));
+const AdminCards        = lazy(() => import('./pages/admin/AdminCards'));
 const AdminAudit        = lazy(() => import('./pages/admin/AdminAudit'));
 const AdminSettings     = lazy(() => import('./pages/admin/AdminSettings'));
+const AdminTradePairs   = lazy(() => import('./pages/admin/AdminTradePairs'));
 
 function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
   const shouldReduceMotion = useReducedMotion();
@@ -105,6 +108,34 @@ function PageTransitionWrapper({ children }: { children: React.ReactNode }) {
 
 function AnimatedRoutes() {
   const location = useLocation();
+
+  useEffect(() => {
+    const path = location.pathname;
+    let title = 'EVONANCE — The Future of Crypto Finance';
+    
+    if (path === '/dashboard') title = 'Dashboard — EVONANCE';
+    else if (path === '/trade') title = 'Trade — EVONANCE';
+    else if (path === '/swap') title = 'Swap — EVONANCE';
+    else if (path === '/cards') title = 'Cards — EVONANCE';
+    else if (path === '/settings') title = 'Settings — EVONANCE';
+    else if (path === '/referral') title = 'Refer & Earn — EVONANCE';
+    else if (path === '/kyc') title = 'Identity Verification — EVONANCE';
+    else if (path === '/notifications') title = 'Notifications — EVONANCE';
+    else if (path === '/help') title = 'Help Center — EVONANCE';
+    else if (path.startsWith('/help/')) title = 'Help Center — EVONANCE';
+    else if (path === '/admin/login') title = 'Admin Login — EVONANCE';
+    else if (path.startsWith('/admin')) title = 'Admin — EVONANCE';
+    else if (path === '/login') title = 'Sign In — EVONANCE';
+    else if (path === '/signup') title = 'Sign Up — EVONANCE';
+    else if (path === '/forgot-password') title = 'Forgot Password — EVONANCE';
+    else if (path === '/reset-password') title = 'Reset Password — EVONANCE';
+    else if (path === '/privacy') title = 'Privacy Policy — EVONANCE';
+    else if (path === '/terms') title = 'Terms of Service — EVONANCE';
+    else if (path === '/cookies') title = 'Cookie Policy — EVONANCE';
+    else if (path === '/compliance') title = 'Compliance — EVONANCE';
+    
+    document.title = title;
+  }, [location.pathname]);
 
   return (
     <ErrorBoundary>
@@ -190,71 +221,20 @@ function AnimatedRoutes() {
             <Route path="/help/:articleId"  element={<PageTransitionWrapper><HelpArticle /></PageTransitionWrapper>} />
             <Route path="/verify-2fa"       element={<PageTransitionWrapper><Verify2FA /></PageTransitionWrapper>} />
             <Route path="/install"          element={<PageTransitionWrapper><InstallGuide /></PageTransitionWrapper>} />
+            <Route path="/admin/login"       element={<PageTransitionWrapper><AdminLogin /></PageTransitionWrapper>} />
 
-            {/* Admin routes — ProtectedRoute (auth) + AdminGuard (role) inside each page */}
-            <Route path="/admin" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminOverview />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/users" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminUsers />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/transactions" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminTransactions />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/withdrawals" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminWithdrawals />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/deposits" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminDeposits />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/kyc" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminKYC />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/referrals" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminReferrals />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/audit" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminAudit />
-                </Suspense>
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/settings" element={
-              <ProtectedRoute>
-                <Suspense fallback={<AdminPageLoader />}>
-                  <AdminSettings />
-                </Suspense>
-              </ProtectedRoute>
-            } />
+            {/* Admin routes — AdminGuard inside each page redirects to /admin/login if not authenticated */}
+            <Route path="/admin"              element={<Suspense fallback={<AdminPageLoader />}><AdminOverview /></Suspense>} />
+            <Route path="/admin/users"        element={<Suspense fallback={<AdminPageLoader />}><AdminUsers /></Suspense>} />
+            <Route path="/admin/transactions" element={<Suspense fallback={<AdminPageLoader />}><AdminTransactions /></Suspense>} />
+            <Route path="/admin/withdrawals"  element={<Suspense fallback={<AdminPageLoader />}><AdminWithdrawals /></Suspense>} />
+            <Route path="/admin/deposits"     element={<Suspense fallback={<AdminPageLoader />}><AdminDeposits /></Suspense>} />
+            <Route path="/admin/cards"        element={<Suspense fallback={<AdminPageLoader />}><AdminCards /></Suspense>} />
+            <Route path="/admin/kyc"          element={<Suspense fallback={<AdminPageLoader />}><AdminKYC /></Suspense>} />
+            <Route path="/admin/referrals"    element={<Suspense fallback={<AdminPageLoader />}><AdminReferrals /></Suspense>} />
+            <Route path="/admin/audit"        element={<Suspense fallback={<AdminPageLoader />}><AdminAudit /></Suspense>} />
+            <Route path="/admin/settings"     element={<Suspense fallback={<AdminPageLoader />}><AdminSettings /></Suspense>} />
+            <Route path="/admin/trade-pairs"  element={<Suspense fallback={<AdminPageLoader />}><AdminTradePairs /></Suspense>} />
           </Routes>
         </AnimatePresence>
       </Suspense>

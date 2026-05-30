@@ -18,6 +18,7 @@ import { formatPrice } from '../lib/crypto';
 import LiveIndicator from '../components/LiveIndicator';
 import Footer from '../components/Footer';
 import PWAInstallBanner from '../components/PWAInstallBanner';
+import { useAuth } from '../hooks/useAuth';
 
 // Custom CountUp Component to cleanly trigger individual stat triggers
 function StatCounter({ target, prefix = '', suffix = '', decimals = 0 }: { target: number, prefix?: string, suffix?: string, decimals?: number }) {
@@ -50,6 +51,7 @@ function TickerPriceSpan({ price, change24h }: { price: number; change24h: numbe
 }
 
 export default function Homepage() {
+  const { user } = useAuth();
   const shouldReduceMotion = useReducedMotion();
   const { coins, loading, wsConnected, source } = useTopCoins();
 
@@ -228,7 +230,7 @@ export default function Homepage() {
                   to="/signup" 
                   className="px-8 py-4 bg-primary text-white font-bold rounded-xl shadow-lg shadow-primary/20 hover:shadow-primary/30 flex items-center justify-center gap-2 cursor-pointer transition-all"
                 >
-                  <span>Get Started</span>
+                  <span>Get Started Free</span>
                   <ArrowRight className="w-5 h-5" />
                 </Link>
               </motion.span>
@@ -238,12 +240,12 @@ export default function Homepage() {
                 transition={{ type: 'spring', stiffness: 400, damping: 20 }}
                 className="inline-block rounded-xl border border-border"
               >
-                <a 
-                  href="#markets" 
+                <Link 
+                  to="/trade" 
                   className="px-8 py-4 text-foreground font-semibold flex items-center justify-center gap-2 cursor-pointer transition-all rounded-xl"
                 >
-                  <span>Markets Feed</span>
-                </a>
+                  <span>Explore Markets</span>
+                </Link>
               </motion.span>
             </motion.div>
 
@@ -379,10 +381,10 @@ export default function Homepage() {
                   className="inline-block"
                 >
                   <Link 
-                    to="/signup" 
+                    to={user ? "/cards" : "/signup"} 
                     className="px-8 py-4 bg-white text-primary font-bold rounded-xl shadow-lg shadow-white/10 flex items-center gap-2 cursor-pointer transition-all hover:bg-white/95"
                   >
-                    <span>Get Virtual Card</span>
+                    <span>Create Your Card</span>
                     <ArrowRight className="w-5 h-5" />
                   </Link>
                 </motion.span>
