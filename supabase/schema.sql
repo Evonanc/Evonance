@@ -23,29 +23,59 @@ create table if not exists public.user_profiles (
 create or replace function public.handle_new_user()
 returns trigger language plpgsql security definer as $$
 begin
-  insert into public.user_profiles (id, email, first_name, last_name)
+  -- Insert into profiles (used by EVONANCE codebase)
+  insert into public.profiles (
+    id, 
+    email, 
+    first_name, 
+    last_name, 
+    full_name, 
+    kyc_status, 
+    kyc_level
+  )
   values (
     new.id,
     new.email,
     new.raw_user_meta_data ->> 'first_name',
-    new.raw_user_meta_data ->> 'last_name'
-  );
+    new.raw_user_meta_data ->> 'last_name',
+    coalesce(new.raw_user_meta_data ->> 'full_name', concat(new.raw_user_meta_data ->> 'first_name', ' ', new.raw_user_meta_data ->> 'last_name')),
+    'none',
+    1
+  )
+  on conflict (id) do update
+  set email = excluded.email,
+      first_name = coalesce(excluded.first_name, public.profiles.first_name),
+      last_name = coalesce(excluded.last_name, public.profiles.last_name),
+      full_name = coalesce(excluded.full_name, public.profiles.full_name);
 
-  -- Auto-create wallet
-  insert into public.wallets (id, user_id, name)
-  values (uuid_generate_v4(), new.id, 'Main Wallet');
-
-  -- Auto-create settings
-  insert into public.user_settings (user_id)
-  values (new.id);
+  -- Auto-create default USDT wallet (non-null symbol constraint satisfied)
+  insert into public.wallets (
+    id, 
+    user_id, 
+    symbol, 
+    name, 
+    balance, 
+    avg_buy_price
+  )
+  values (
+    gen_random_uuid(), 
+    new.id, 
+    'USDT', 
+    'Tether', 
+    0.00, 
+    1.00
+  )
+  on conflict do nothing;
 
   -- Welcome notification
-  insert into public.notifications (id, user_id, type, title, body)
+  insert into public.notifications (user_id, type, title, body)
   values (
-    uuid_generate_v4(), new.id, 'account',
+    new.id, 
+    'account',
     'Welcome to EVONANCE 🎉',
     'Your account is ready. Fund your wallet and start trading instantly.'
-  );
+  )
+  on conflict do nothing;
 
   return new;
 end;
