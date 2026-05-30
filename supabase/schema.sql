@@ -30,8 +30,7 @@ begin
     first_name, 
     last_name, 
     full_name, 
-    kyc_status, 
-    kyc_level
+    kyc_status
   )
   values (
     new.id,
@@ -39,8 +38,7 @@ begin
     new.raw_user_meta_data ->> 'first_name',
     new.raw_user_meta_data ->> 'last_name',
     coalesce(new.raw_user_meta_data ->> 'full_name', concat(new.raw_user_meta_data ->> 'first_name', ' ', new.raw_user_meta_data ->> 'last_name')),
-    'none',
-    1
+    'none'
   )
   on conflict (id) do update
   set email = excluded.email,
@@ -55,7 +53,9 @@ begin
     symbol, 
     name, 
     balance, 
-    avg_buy_price
+    avg_buy_price,
+    created_at,
+    updated_at
   )
   values (
     gen_random_uuid(), 
@@ -63,17 +63,9 @@ begin
     'USDT', 
     'Tether', 
     0.00, 
-    1.00
-  )
-  on conflict do nothing;
-
-  -- Welcome notification
-  insert into public.notifications (user_id, type, title, body)
-  values (
-    new.id, 
-    'account',
-    'Welcome to EVONANCE 🎉',
-    'Your account is ready. Fund your wallet and start trading instantly.'
+    1.00,
+    now(),
+    now()
   )
   on conflict do nothing;
 
