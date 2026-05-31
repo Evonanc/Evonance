@@ -91,12 +91,68 @@ export async function isAdmin(): Promise<boolean> {
 // ── Stats ─────────────────────────────────────────────────────────
 
 export async function getPlatformStats(): Promise<PlatformStats | null> {
-  const { data, error } = await supabase.rpc('get_platform_stats');
-  if (error) {
-    console.error('Stats error:', error);
+  try {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
+    const weekStart  = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    const [
+      usersRes,
+      verifiedRes,
+      txRes,
+      walletRes,
+      cardRes,
+      referralRes,
+      newTodayRes,
+      newWeekRes,
+      volTodayRes,
+      volWeekRes,
+    ] = await Promise.all([
+      // total users
+      supabase.from('profiles').select('id', { count: 'exact', head: true }),
+      // verified users
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('kyc_status', 'verified'),
+      // total transactions
+      supabase.from('transactions').select('id,total_usd', { count: 'exact' }),
+      // total wallets
+      supabase.from('wallets').select('id', { count: 'exact', head: true }),
+      // total cards
+      supabase.from('cards').select('id', { count: 'exact', head: true }),
+      // active referrals
+      supabase.from('referrals').select('id', { count: 'exact', head: true }),
+      // new users today
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
+      // new users this week
+      supabase.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', weekStart),
+      // volume today
+      supabase.from('transactions').select('total_usd').gte('created_at', todayStart).eq('status', 'completed'),
+      // volume this week
+      supabase.from('transactions').select('total_usd').gte('created_at', weekStart).eq('status', 'completed'),
+    ]);
+
+    const totalVolume   = (txRes.data ?? []).reduce((s: number, r: any) => s + (parseFloat(r.total_usd) || 0), 0);
+    const volumeToday   = (volTodayRes.data ?? []).reduce((s: number, r: any) => s + (parseFloat(r.total_usd) || 0), 0);
+    const volumeWeek    = (volWeekRes.data ?? []).reduce((s: number, r: any) => s + (parseFloat(r.total_usd) || 0), 0);
+
+    return {
+      total_users:           usersRes.count    ?? 0,
+      verified_users:        verifiedRes.count ?? 0,
+      pending_kyc:           0,  // update when kyc table exists
+      total_transactions:    txRes.count       ?? 0,
+      total_volume_usd:      totalVolume,
+      total_wallets:         walletRes.count   ?? 0,
+      total_cards:           cardRes.count     ?? 0,
+      active_referrals:      referralRes.count ?? 0,
+      total_referral_rewards: 0,
+      new_users_today:       newTodayRes.count ?? 0,
+      new_users_week:        newWeekRes.count  ?? 0,
+      volume_today:          volumeToday,
+      volume_week:           volumeWeek,
+    };
+  } catch (err) {
+    console.error('[getPlatformStats] error:', err);
     return null;
   }
-  return data as PlatformStats;
 }
 
 // ── Users ─────────────────────────────────────────────────────────
