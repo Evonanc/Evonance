@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router';
+import { useNavigate, useLocation } from 'react-router';
 import Navigation from '../components/Navigation';
 import { useAuth } from '../hooks/useAuth';
 import { useKYC } from '../hooks/useKYC';
@@ -35,8 +35,13 @@ const NATIONALITIES = [...COUNTRIES];
 
 export default function KYCOnboarding() {
   const navigate    = useNavigate();
+  const location    = useLocation();
   const { user }    = useAuth();
   const { kyc, loading, status, level, refresh } = useKYC();
+
+  const state = location.state as any;
+  const pendingWithdrawal = state?.pendingWithdrawal;
+  const returnMessage = state?.message;
 
   const [step, setStep]           = useState(1);
   const [saving, setSaving]       = useState(false);
@@ -310,6 +315,30 @@ export default function KYCOnboarding() {
     <div className="min-h-screen bg-background">
       <Navigation />
       <div className="max-w-2xl mx-auto px-4 py-8">
+
+        {pendingWithdrawal && (
+          <div className="bg-primary/5 border border-primary/20
+            rounded-2xl p-4 mb-6 flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 flex
+              items-center justify-center flex-shrink-0">
+              <Shield className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-foreground">
+                Complete verification to process your withdrawal
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Your withdrawal of{' '}
+                <strong className="text-foreground">
+                  ${pendingWithdrawal.amount?.toFixed(2)} USDT
+                </strong>{' '}
+                via {pendingWithdrawal.network} is waiting.
+                Once your identity is verified, return to
+                the dashboard to complete it.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Progress bar */}
         <div className="mb-8">

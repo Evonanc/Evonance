@@ -87,6 +87,28 @@ export default function Dashboard() {
     loadDeposits();
   }, [user]);
 
+  useEffect(() => {
+    const pending = localStorage.getItem('evonance_pending_withdrawal');
+    if (pending && status === 'verified') {
+      try {
+        const data = JSON.parse(pending);
+        toast.success(
+          `Your KYC is approved! You can now submit your $${data.amount} USDT withdrawal.`,
+          {
+            duration: 8000,
+            action: {
+              label: 'Withdraw Now',
+              onClick: () => setWithdrawOpen(true),
+            },
+          }
+        );
+        localStorage.removeItem('evonance_pending_withdrawal');
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [status]);
+
   const watchlistCoins = useMemo(() => {
     return watchlistSymbols
       .map(sym => coins.find(c => c.symbol === sym))
