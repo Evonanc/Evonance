@@ -18,33 +18,69 @@ export interface Candle {
   volume: number;
 }
 
-// CORS proxy options — try each in order until one works
+// CORS proxy options for Bybit (fallback only)
 const CORS_PROXIES = [
   'https://corsproxy.io/?',
   'https://api.allorigins.win/raw?url=',
 ];
+
+// Map Bybit interval values ('1', '5', '15', '60', '240', 'D', 'W') to Binance intervals
+const BYBIT_TO_BINANCE_INTERVALS: Record<string, string> = {
+  '1':   '1m',
+  '5':   '5m',
+  '15':  '15m',
+  '60':  '1h',
+  '240': '4h',
+  'D':   '1d',
+  'W':   '1w',
+};
 
 export async function fetchCandles(
   symbol: string,      // e.g. "BTCUSDT"
   interval: string,    // e.g. "60" (Bybit format)
   limit = 200
 ): Promise<Candle[]> {
-  const url = `https://api.bybit.com/v5/market/kline` +
-    `?category=spot&symbol=${symbol}&interval=${interval}&limit=${limit}`;
+  const cleanSymbol = symbol.toUpperCase();
 
-  // Try direct first (works in some environments)
+  // ── 1. Try Binance First (Native CORS support, no proxies needed, extremely reliable) ──
+  try {
+    const binanceInterval = BYBIT_TO_BINANCE_INTERVALS[interval] || '1h';
+    const binanceUrl = `https://api.binance.com/api/v3/klines?symbol=${cleanSymbol}&interval=${binanceInterval}&limit=${limit}`;
+    const res = await fetch(binanceUrl, { signal: AbortSignal.timeout(5000) });
+    if (res.ok) {
+      const json = await res.json();
+      if (Array.isArray(json)) {
+        const candles: Candle[] = json.map((c: any) => ({
+          time: Math.floor(c[0] / 1000), // ms → seconds
+          open:   parseFloat(c[1]),
+          high:   parseFloat(c[2]),
+          low:    parseFloat(c[3]),
+          close:  parseFloat(c[4]),
+          volume: parseFloat(c[5]),
+        }));
+        if (candles.length > 0) {
+          return candles;
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('[Bybit Candles] Binance fetch failed or timed out, falling back to Bybit...', err);
+  }
+
+  // ── 2. Fallback to Bybit via CORS Proxies ──
+  const bybitUrl = `https://api.bybit.com/v5/market/kline` +
+    `?category=spot&symbol=${cleanSymbol}&interval=${interval}&limit=${limit}`;
+
   for (const proxy of ['', ...CORS_PROXIES]) {
     try {
       const res = await fetch(
-        proxy ? proxy + encodeURIComponent(url) : url,
-        { signal: AbortSignal.timeout(8000) }
+        proxy ? proxy + encodeURIComponent(bybitUrl) : bybitUrl,
+        { signal: AbortSignal.timeout(6000) }
       );
       if (!res.ok) continue;
       const json = await res.json();
       if (json.retCode !== 0) continue;
 
-      // Bybit returns: [startTime, open, high, low, close, volume, turnover]
-      // Most recent candle is first — reverse for chronological order
       const candles: Candle[] = json.result.list
         .map((c: string[]) => ({
           time: Math.floor(parseInt(c[0]) / 1000), // ms → seconds
@@ -56,13 +92,15 @@ export async function fetchCandles(
         }))
         .reverse();
 
-      return candles;
+      if (candles.length > 0) {
+        return candles;
+      }
     } catch {
       continue;
     }
   }
 
-  // All proxies failed — return empty array (chart shows no data message)
+  // All attempts failed — return empty array (chart shows warning notice)
   console.warn('[Bybit Candles] All fetch attempts failed for', symbol);
   return [];
 }
