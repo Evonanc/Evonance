@@ -621,5 +621,65 @@ export async function rejectCardRequest(
   );
 }
 
+// ── Admin manual funding ──────────────────────────────────────────
+
+export async function adminFundUser(
+  userId: string,
+  symbol: string,
+  amount: number,
+  note: string
+): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { getWallet, upsertWallet, addTransaction, createNotification } = await import('./db');
+
+  const wallet = await getWallet(userId, symbol);
+  const assetName = symbol === 'USDT' ? 'Tether' : symbol === 'BTC' ? 'Bitcoin' : symbol === 'ETH' ? 'Ethereum' : symbol === 'SOL' ? 'Solana' : symbol;
+  
+  const currentBalance = wallet?.balance ?? 0;
+  const newBalance = currentBalance + amount;
+  if (newBalance < 0) {
+    throw new Error('Balance cannot be negative');
+  }
+
+  const avgBuyPrice = wallet?.avg_buy_price ?? 1.0;
+
+  await upsertWallet(
+    userId,
+    symbol,
+    assetName,
+    newBalance,
+    avgBuyPrice
+  );
+
+  await addTransaction(userId, {
+    type: 'deposit',
+    symbol,
+    amount,
+    price_usd: 1.0,
+    total_usd: amount,
+    fee_usd: 0,
+    status: 'completed',
+    note: note || `Admin Manual Credit`,
+  });
+
+  await createNotification(
+    userId,
+    'deposit',
+    'Account Funded By Admin',
+    `An administrator has credited your wallet with ${amount} ${symbol}. Note: ${note || 'Manual credit.'}`,
+    '/dashboard'
+  );
+
+  await logAdminAction(
+    'admin_fund_user',
+    'user',
+    userId,
+    { symbol, amount, note }
+  );
+}
+
+
 
 

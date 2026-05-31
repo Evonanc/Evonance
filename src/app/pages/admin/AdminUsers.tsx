@@ -4,6 +4,7 @@ import AdminGuard from '../../components/AdminGuard';
 import {
   getAdminUsers, getUserDetail,
   logAdminAction, AdminUser,
+  adminFundUser,
 } from '../../lib/admin';
 import {
   Search, X, ChevronLeft, ChevronRight,
@@ -26,6 +27,14 @@ export default function AdminUsers() {
   const [selected, setSelected]   = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const LIMIT = 20;
+
+  // Funding feature states
+  const [fundSymbol, setFundSymbol]   = useState('USDT');
+  const [fundAmount, setFundAmount]   = useState('');
+  const [fundNote, setFundNote]       = useState('');
+  const [fundingUser, setFundingUser] = useState(false);
+  const [fundError, setFundError]     = useState('');
+  const [fundSuccess, setFundSuccess] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -54,6 +63,11 @@ export default function AdminUsers() {
 
   const handleViewUser = async (user: AdminUser) => {
     setDetailLoading(true);
+    setFundSymbol('USDT');
+    setFundAmount('');
+    setFundNote('');
+    setFundError('');
+    setFundSuccess(false);
     try {
       const detail = await getUserDetail(user.id);
       setSelected({ ...user, ...detail });
@@ -65,6 +79,36 @@ export default function AdminUsers() {
       console.error('Error fetching user detail:', err);
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const handleFundUser = async () => {
+    if (!selected) return;
+    setFundingUser(true);
+    setFundError('');
+    setFundSuccess(false);
+
+    try {
+      const amount = parseFloat(fundAmount);
+      if (isNaN(amount) || amount <= 0) {
+        throw new Error('Please enter a valid positive number');
+      }
+
+      await adminFundUser(selected.id, fundSymbol, amount, fundNote);
+      setFundSuccess(true);
+      setFundAmount('');
+      setFundNote('');
+      
+      // Reload user detail to update shown balance
+      const updatedDetail = await getUserDetail(selected.id);
+      setSelected({ ...selected, ...updatedDetail });
+
+      // Reload user list in background
+      load();
+    } catch (err: any) {
+      setFundError(err.message || 'Failed to fund user');
+    } finally {
+      setFundingUser(false);
     }
   };
 
@@ -382,6 +426,69 @@ export default function AdminUsers() {
                     </div>
                   </div>
                 )}
+
+                {/* Funding Panel */}
+                <div className="pt-4 border-t border-border">
+                  <h5 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+                    <Wallet className="w-4 h-4 text-muted-foreground" />
+                    Fund User Account
+                  </h5>
+                  
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs text-muted-foreground block mb-1">Asset Symbol</label>
+                        <select
+                          value={fundSymbol}
+                          onChange={e => setFundSymbol(e.target.value)}
+                          className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        >
+                          <option value="USDT">USDT (Tether)</option>
+                          <option value="BTC">BTC (Bitcoin)</option>
+                          <option value="ETH">ETH (Ethereum)</option>
+                          <option value="SOL">SOL (Solana)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs text-muted-foreground block mb-1">Amount to Add</label>
+                        <input
+                          type="number"
+                          step="any"
+                          value={fundAmount}
+                          onChange={e => setFundAmount(e.target.value)}
+                          placeholder="e.g. 500"
+                          className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 placeholder:text-muted-foreground"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-muted-foreground block mb-1">Reason / Note</label>
+                      <input
+                        type="text"
+                        value={fundNote}
+                        onChange={e => setFundNote(e.target.value)}
+                        placeholder="e.g. Manual credit"
+                        className="w-full bg-secondary border border-border rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 placeholder:text-muted-foreground"
+                      />
+                    </div>
+
+                    {fundError && (
+                      <p className="text-xs text-destructive font-medium">{fundError}</p>
+                    )}
+                    {fundSuccess && (
+                      <p className="text-xs text-success font-medium">Account funded successfully! ✅</p>
+                    )}
+
+                    <button
+                      onClick={handleFundUser}
+                      disabled={fundingUser || !fundAmount || parseFloat(fundAmount) <= 0}
+                      className="w-full bg-primary hover:bg-primary/95 text-white rounded-xl py-2.5 text-sm font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {fundingUser ? 'Funding Account...' : 'Confirm Funding'}
+                    </button>
+                  </div>
+                </div>
 
                 {/* Actions */}
                 <div className="flex gap-2 pt-2 border-t border-border">
